@@ -1,0 +1,20 @@
+# remove system folders & files
+.vscode/
+.documents/
+*.vscode
+*.ipynb_checkpoints
+.DS_Store
+*/.DS_Store
+.DS_Store?
+__pycache__/
+**/__pycache__
+__init__.py/
+*.log
+
+# ignore large folders & files
+data/ 
+fits/
+figures/
+simulations/
+analyses/
+backup/
