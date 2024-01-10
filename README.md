@@ -15,14 +15,16 @@ Here is the guideline of reproducing the main figures in the paper.
 
 ## 1) Install the required Python environment
 
-Create a virtual environment and install the dependencies.
-
-Bash commands:
+Create a virtual environment
 ```
 conda create --name ecpg python=3.8
 ```
+Activate the environment
 ```
 conda activate ecpg
+```
+Install the dependencies
+```
 cd ecpg
 pip install -r requirements.txt
 ```
