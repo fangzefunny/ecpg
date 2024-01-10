@@ -34,7 +34,7 @@ Downloaded from the OSF (https://osf.io/uctdb/) zip files `data`, `simulations`,
 Required (must be downloaded and unzipped before being able to run the code): 
 * `data`: contains the experiment data collected online. 
 
-Optional (highly recommand to downlaod to save your time): 
+Optional (highly recommand to downlaod if you plan to run the scripts on your local computer, all scripts require parallel computing): 
 * `simulations`: the model simulations output.
 * `fits`: the model fitting results.
 * `analyses`: the analyses results. 
