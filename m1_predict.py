@@ -80,7 +80,7 @@ def sim_subj_paral(pool, args, block_type,
     # use subject's parameters
     if args.sub_id == 'nan':
         rparams  = [kwargs[n] for n in model.agent.p_name]
-        param_info = '-'.join([f'{n}={p}' for n, p in zip(model.agent.p_name, rparams)])
+        param_info = '-'.join([f'{n}={p}' for n, p in zip(model.agent.p_print, rparams)])
         params = [fn(p) for p, fn in zip(rparams, model.agent.p_links)]
         task = None 
     else:

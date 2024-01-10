@@ -1,5 +1,6 @@
 import numpy as np 
 import pandas as pd 
+import torch
  
 from functools import lru_cache
 from scipy.special import softmax 
@@ -363,6 +364,7 @@ class rmPG(base_agent):
     p_bnds   = [(np.log(eps_), np.log(50))]
     p_pbnds  = [(-2, 2)]
     p_name   = ['α']  
+    p_print  = ['alpha']
     p_priors = []
     p_poi    = ['α'] 
     p_trans  = [lambda x: clip_exp(x)]
@@ -444,6 +446,7 @@ class ecPG_sim(base_agent):
                 (np.log(eps_), np.log(50))]
     p_pbnds  = [(-2, 2), (-2, 2), (-10, 2)]
     p_name   = ['α_ψ', 'α_ρ', 'λ']  
+    p_print  = ['alpha_psi', 'alpha_rho', 'lmbda']
     p_poi    = p_name
     p_priors = []
     p_trans  = [lambda x: clip_exp(x),
@@ -599,6 +602,7 @@ class caPG(ecPG):
                 (np.log(eps_), np.log(50))]
     p_pbnds  = [(-2, 2), (-2, 2)]
     p_name   = ['α_ψ', 'α_ρ']  
+    p_print  = ['alpha_psi', 'alpha_rho']
     p_poi    = p_name
     p_priors = []
     p_trans  = [lambda x: clip_exp(x),
@@ -707,6 +711,7 @@ class rmPG_fea(fea_base, rmPG):
     p_bnds   = [(np.log(eps_), np.log(50))]
     p_pbnds  = [(-2, 2)]
     p_name   = ['α']  
+    p_print  = ['alpha']
     p_poi    = p_name
     p_priors = []
     p_trans  = [lambda x: clip_exp(x)]
@@ -737,6 +742,7 @@ class ecPG_fea_sim(fea_base, ecPG_sim):
                 (np.log(eps_), np.log(50))]
     p_pbnds  = [(-2, 2), (-2, 2), (-10, -.15)]
     p_name   = ['α_ψ', 'α_ρ', 'λ']  
+    p_print  = ['alpha_psi', 'alpha_rho', 'lmbda']
     p_poi    = p_name
     p_priors = []
     p_trans  = [lambda x: clip_exp(x),
@@ -832,6 +838,7 @@ class caPG_fea(ecPG_fea):
                 (np.log(eps_), np.log(50))]
     p_pbnds  = [(-2, 2), (-2, 2)]
     p_name   = ['α_ψ', 'α_ρ'] 
+    p_print  = ['alpha_psi', 'alpha_rho', 'lmbda']
     p_poi    = p_name 
     p_priors = []
     p_trans  = [lambda x: clip_exp(x),
@@ -897,6 +904,7 @@ class ACL(base_agent):
                 (np.log(eps_), np.log(50))]
     p_pbnds  = [(-3, 3), (-1, 3), (-3, 3), (-3, 3)]
     p_name   = ['η', 'β', 'ε', 'η_a']
+    p_print  = ['eta', 'beta', 'epsilon', 'eta_a']
     p_poi    = p_name
     p_priors = []
     p_trans  = [lambda x: 1/(1+clip_exp(-x)),
@@ -991,6 +999,7 @@ class LC(base_agent):
                 (-50, 50),]
     p_pbnds  = [(-2, 2), (-1, 2), (-1, 2), (-2, 2)]
     p_name   = ['η', 'α', 'β', 'w']
+    p_print  = ['eta', 'alpha', 'beta', 'w']
     p_poi    = ['η', 'α', 'β']
     p_priors = []
     p_trans  = [lambda x: 1/(1+clip_exp(-x)),

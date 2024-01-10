@@ -3,7 +3,7 @@
 ## delete the DS.Store
 find . -name ".DS_Store" -delete
 
-declare data_sets=("exp1" "exp2")  #
+declare data_sets=("exp1" "exp2") 
 declare fit_method='mle'
 declare alg='Nelder-Mead'
 
@@ -21,15 +21,16 @@ for data_set in "${data_sets[@]}"; do
         for lmbda in 0 .05 .1 .2 .5; do
             python m1_predict.py -n='ecPG_fea_sim' -d='exp2' -c=50 -p="[11, 4, $lmbda]"
         done
+        python m1_predict.py -n='ACL' -d='exp2' -c=50 -p="[.65, 10, 0.04, .6]"
     fi
-    python m1_predict.py -n='ACL' -d='exp2' -c=50 -p="[.65, 10, 0.04, .6]"
+    
 
     ## step 2: fit models to data
     case "$data_set" in
         # case 1
         "exp1") declare models=("rmPG" "caPG" "ecPG");; 
         # case 2 
-        "exp2") declare models=("rmPG_fea" "caPG_fea" "ecPG_fea" "LC" "ACL");; # 
+        "exp2") declare models=("rmPG_fea" "caPG_fea" "ecPG_fea" "LC" "ACL");; 
     esac 
     for model in "${models[@]}"; do  
         echo Data set=$data_set Model=$model Method=$fit_method
