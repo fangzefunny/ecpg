@@ -20,7 +20,10 @@ Create a virtual environment and install the dependencies.
 Bash commands:
 ```
 conda create --name ecpg python=3.8
+```
+```
 conda activate ecpg
+cd ecpg
 pip install -r requirements.txt
 ```
 You can use the command `bash run.sh` in the terminal to complete all modeling and analysis, or run each section step-by-step following the instructions below.
