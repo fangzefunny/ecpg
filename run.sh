@@ -3,7 +3,7 @@
 ## delete the DS.Store
 find . -name ".DS_Store" -delete
 
-declare data_sets=("exp2")  #"exp1" 
+declare data_sets=("exp1" "exp2")  #
 declare fit_method='mle'
 declare alg='Nelder-Mead'
 
@@ -29,7 +29,7 @@ for data_set in "${data_sets[@]}"; do
         # case 1
         "exp1") declare models=("rmPG" "caPG" "ecPG");; 
         # case 2 
-        "exp2") declare models=("ecPG_fea" "LC" "ACL");; #"rmPG_fea" "caPG_fea" 
+        "exp2") declare models=("rmPG_fea" "caPG_fea" "ecPG_fea" "LC" "ACL");; # 
     esac 
     for model in "${models[@]}"; do  
         echo Data set=$data_set Model=$model Method=$fit_method
