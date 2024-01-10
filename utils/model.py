@@ -1,6 +1,5 @@
 import numpy as np 
 import pandas as pd 
-import torch
  
 from functools import lru_cache
 from scipy.special import softmax 
