@@ -8,6 +8,9 @@ class viz:
     '''Define the default visualize configure
     '''
     # basic
+    white   = np.array([255, 255, 255]) / 255
+    new_blue= np.array([ 98, 138, 174]) / 255
+    new_red = np.array([195, 102, 101]) / 255
     dBlue   = np.array([ 56,  56, 107]) / 255
     Blue    = np.array([ 46, 107, 149]) / 255
     lBlue   = np.array([241, 247, 248]) / 255
@@ -73,13 +76,13 @@ class viz:
                     'vizYellows', [lYellow, Yellow])
     GreensMap = matplotlib.colors.LinearSegmentedColormap.from_list(
                     'vizGreens',  [lGreen, Green])
+    cool_warm = matplotlib.colors.LinearSegmentedColormap.from_list(
+                    'cool_warm',   [new_blue, white, new_red])
 
     @staticmethod
     def get_style(): 
-        # Larger scale for plots in notebooks
-        #plt.style.use('extensys-pl')
+        '''The style of our figures'''
         sns.set_context("talk")
-        #plt.rcParams['font.family']        = 'Helvetica'
         mpl.rcParams['pdf.fonttype']       = 42
         mpl.rcParams['axes.spines.right']  = False
         mpl.rcParams['axes.spines.top']    = False
@@ -87,3 +90,92 @@ class viz:
         mpl.rcParams['savefig.dpi']        = 300
         mpl.rcParams['figure.facecolor']   = 'w'
 
+    @staticmethod
+    def violin(ax, data, x, y, order, palette, orient='v',
+        hue=None, hue_order=None,
+        scatter_size=7, scatter_alpha=1,
+        mean_marker_size=6, err_capsize=.11, 
+        add_errs=True, errorbar='se', errorcolor=[.3]*3,
+        errorlw=2, pointdoge=.4):
+        g_var = y if orient=='h' else x
+        v_var = x if orient=='h' else y
+        v=sns.violinplot(data=data, 
+                            x=x, y=y, order=order, 
+                            hue=g_var if hue is None else hue, 
+                            hue_order=order if hue is None else hue_order,
+                            orient=orient, palette=palette, 
+                            legend=False, alpha=.1, inner=None, density_norm='width',
+                            ax=ax)
+        plt.setp(v.collections, alpha=.5, edgecolor='none')
+        sns.stripplot(data=data, 
+                            x=x, y=y, order=order, 
+                            hue=g_var if hue is None else hue, 
+                            hue_order=order if hue is None else hue_order, 
+                            orient=orient, palette=palette, 
+                            size=scatter_size,
+                            edgecolor='auto', jitter=True, alpha=scatter_alpha,
+                            dodge=False if hue is None else True,
+                            legend=False, zorder=2,
+                            ax=ax)
+        if add_errs:
+            groupby = [g_var, hue] if hue is not None else [g_var]
+            sns.barplot(data=data, 
+                        x=x, y=y, order=order, 
+                        orient=orient, 
+                        hue=g_var if hue is None else hue, 
+                        hue_order=order if hue is None else hue_order,
+                        errorbar=errorbar, linewidth=1, legend=False,
+                        edgecolor=(0,0,0,0), facecolor=(0,0,0,0),
+                        capsize=err_capsize, err_kws={'color': errorcolor, 'linewidth': errorlw},
+                        ax=ax)
+            sns.stripplot(data=data.groupby(by=groupby)[v_var].mean().reset_index(), 
+                            x=x, y=y, order=order, 
+                            hue=hue, hue_order=hue_order, 
+                            palette=[errorcolor]*len(hue_order) if hue is not None else None,
+                            dodge=False if hue is None else True,
+                            legend=False,
+                            marker='o', size=mean_marker_size, color=errorcolor, ax=ax)
+    
+    @staticmethod
+    def violin_with_tar(ax, data, color, x, y, order, orient='v',
+        hue=None, hue_order=None,
+        scatter_size=4, scatter_alpha=1,
+        mean_marker_size=6, err_capsize=.14, 
+        errorbar='se', errorlw=3,
+        errorcolor=[.5]*3):
+        g_var = y if orient=='h' else x
+        v_var = x if orient=='h' else y
+        palette = [[.9]*3, color]
+        sns.violinplot(data=data, 
+                x=x, y=y, order=order, 
+                hue=g_var if hue is None else hue, 
+                hue_order=order if hue is None else hue_order,
+                orient=orient, palette=palette, 
+                legend=False, alpha=.5, 
+                inner=None, density_norm='width',
+                edgecolor='none', gap=.15,
+                split=True,
+                ax=ax)
+        sns.stripplot(data=data.query(f'{hue}=="{hue_order[1]}"'), 
+                x=x, y=y, order=order, 
+                hue=g_var if hue is None else hue, 
+                hue_order=order if hue is None else hue_order, 
+                orient=orient, palette=palette, 
+                size=scatter_size,
+                edgecolor='auto', jitter=True, alpha=scatter_alpha,
+                dodge=True,
+                legend=False, zorder=2,
+                ax=ax)
+        point_palette = [color, errorcolor]
+        sns.pointplot(data=data, 
+                x=x, y=y, order=order, 
+                orient=orient, 
+                hue=hue, hue_order=hue_order,
+                legend=False,
+                palette=point_palette,
+                ls='none', dodge=.4,
+                errorbar=errorbar,
+                markersize=mean_marker_size,
+                capsize=err_capsize, err_kws={'linewidth': errorlw},
+                ax=ax)
+    

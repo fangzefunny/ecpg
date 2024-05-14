@@ -7,21 +7,22 @@ import pandas as pd
 
 from utils.parallel import get_pool 
 from utils.model import *
-from utils.env_fn import AEtask
+from utils.env_fn import *
 
 ## pass the hyperparams
 parser = argparse.ArgumentParser(description='Test for argparse')
 parser.add_argument('--n_fit',      '-f', help='fit times', type = int, default=1)
 parser.add_argument('--data_set',   '-d', help='which_data', type = str, default='exp2')
-parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='mle')
+parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='map')
 parser.add_argument('--algorithm',  '-a', help='fitting algorithm', type = str, default='Nelder-Mead')
-parser.add_argument('--agent_name', '-n', help='choose agent', default='rdQ_fea')
+parser.add_argument('--agent_name', '-n', help='choose agent', default='l2PG_fea')
 parser.add_argument('--n_cores',    '-c', help='number of CPU cores used for parallel computing', 
                                             type=int, default=1)
 parser.add_argument('--seed',       '-s', help='random seed', type=int, default=420)
 args = parser.parse_args()
-args.agent = eval(args.agent_name)
-args.group = 'group' if args.method=='hier' else 'ind'
+args.agent  = eval(args.agent_name)
+args.env_fn = eval(f'{args.data_set.split("-")[0]}_task')
+args.group  = 'group' if args.method=='hier' else 'ind'
 
 # find the current path, create the folders if not existedl
 pth = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +34,7 @@ def fit(pool, data, args):
     '''Find the optimal free parameter for each model 
     '''
     ## declare environment 
-    model = wrapper(args.agent, AEtask)
+    model = wrapper(args.agent, args.env_fn)
 
     ## fit list
     fname = f'{pth}/fits/{args.data_set}/fit_sub_info-{args.agent_name}-{args.method}.pkl'
@@ -51,8 +52,8 @@ def fit(pool, data, args):
 
     ## Fit params to each individual 
     if args.group == 'ind':
-        done_subj = 0
-        all_subj  = len(data.keys()) - len(fitted_sub_lst)
+        done_subj = len(fitted_sub_lst)
+        all_subj  = len(data.keys())
         for sub_idx in data.keys(): 
             if sub_idx not in fitted_sub_lst:  
                 print(f'Fitting {args.agent_name} subj {sub_idx}, progress: {(done_subj*100)/all_subj:.2f}%')
@@ -76,6 +77,7 @@ def fit(pool, data, args):
     end_time = datetime.datetime.now()
     print('\nparallel computing spend {:.2f} seconds'.format(
             (end_time - start_time).total_seconds()))
+    
 
 def summary(data, args):
 
@@ -97,7 +99,7 @@ def summary(data, args):
         sub_info = fit_sub_info[sub_idx]
         res_mat[i, :] = np.hstack([sub_info[p] 
                         for p in ['param']+field])
-        if i==0: col = args.agent.p_name + field
+        if i==0: col = args.agent.p_names + field
     
     ## Compute and save the mean and sem
     res_smry[0, :] = np.mean(res_mat, axis=0)

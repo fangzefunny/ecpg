@@ -10,7 +10,7 @@ from utils.fig_fn import *
 
 ## pass the hyperparams
 parser = argparse.ArgumentParser(description='Test for argparse')
-parser.add_argument('--data_set', '-d', help='which_data', type = str, default='exp1')
+parser.add_argument('--data_set', '-d', help='which_data', type = str, default='exp2')
 parser.add_argument('--method',   '-m', help='methods, mle or map', type = str, default='mle')
 args = parser.parse_args()
 
@@ -33,7 +33,7 @@ columnName = {
     'act1':      'a_ava1',
     'act2':      'a_ava2',
     'acc':       'r',
-    'corAct':    'a*',
+    'corAct':    'cor_a',
 }
 
 def trial_Config(row):
@@ -80,10 +80,14 @@ def remake_cols_idx(data, seed=42):
 
     # change ass, gen into train and test
     data['stage'] = data['stage'].map({'ass': 'train', 'gen': 'test'})
+    # add block type
+    if 'block_type' not in data.columns: data['block_type'] = 'cont'
 
     # turn stimuli and action into 0 - 3
-    if args.data_set == 'exp1':
-        data['s'] = data['s'].apply(lambda x: int(x) % exp1_size)
+    task_id = args.data_set.split('-')[0]
+    task_fn = eval(f'{task_id}_task')
+    if task_id=='exp1': data['s'] = data['s'].apply(lambda x: int(x) % exp1_size)
+    data['f'] = data.apply(lambda x: task_fn(x['block_type']).s2f(x['s']), axis=1)
     data['a_ava1'] = data['a_ava1'].apply(lambda x: int(x) % exp1_size)
     data['a_ava2'] = data['a_ava2'].apply(lambda x: int(x) % exp1_size)
 
@@ -99,8 +103,8 @@ def remake_cols_idx(data, seed=42):
 
     # the correct action: str to index,
     # pick a random number if there is a nan
-    data['a*'] = data['a*'].fillna(rng.choice(2))
-    data['a*'] = data.apply(lambda x: x[f"a_ava{x['a*']+1}"], axis=1)
+    data['cor_a'] = data['cor_a'].fillna(rng.choice(2))
+    data['cor_a'] = data.apply(lambda x: x[f"a_ava{x['cor_a']+1}"], axis=1)
 
     # group type 
     pool = data.query('stage=="train"')['config'].unique()
@@ -109,10 +113,6 @@ def remake_cols_idx(data, seed=42):
     stim_Lst = [stim.count(str(i)) for i in range(nS)]
     data['group'] = data.apply(lambda x: get_Group(x, stim_Lst, pool), axis=1)
 
-    # add block type
-    if 'block_type' not in data.columns:
-        data['block_type'] = 'cont'
-    
     return data 
 
 def splitTwoGroups(data, qs=[.25, .75]):
@@ -220,7 +220,96 @@ def pre_process(data_set):
     plt.savefig(f'{pth}/figures/{args.data_set}/human/{args.method}-lc.png', dpi=250)
     plt.close()
 
+def pretrain_exp1(thershold=.98):
+    '''Cached to speed up model fitting 
+    '''
+    env = exp1_task('cont')
+    nS = nZ = env.nS
+    F = torch.FloatTensor(np.eye(nS))
+    theta0 = torch.nn.Parameter(3.5*torch.ones(1))
+    i, loss_prev, tol = 0, np.inf, 1e-8
+    optim = torch.optim.Adam([theta0], lr=0.1)
+
+    while True:
+        ZHat = torch.softmax(F*theta0, dim=1)
+        acc = (ZHat*torch.eye(nZ)).sum(1).mean()
+        loss = .5*(acc - thershold).square()
+        optim.zero_grad()
+        loss.backward() 
+        optim.step() 
+        converge = (.5*np.abs(loss.detach().numpy() - loss_prev) < tol) or (i > 800)
+        if converge: break
+        loss_prev = loss.data.numpy()
+        i += 1
+
+    theta = np.eye(nS)*theta0.detach().numpy()
+    fname = f'{pth}/data/exp1_ecpg_weight.pkl'
+    with open(fname, 'wb')as handle: pickle.dump(theta, handle)
+
+def pretrain_fea(block_type, threshold=.99):
+    '''Cached to speed up model fitting 
+    '''
+    env = exp2_task(block_type)
+    nS, nZ, nI = env.nS, env.nS, env.nI
+    theta0 = (torch.ones(1)).requires_grad_()
+    i, loss_prev, tol = 0, np.inf, 1e-10
+    optim = torch.optim.Adam([theta0], lr=0.1)
+
+    # forward
+    while True:
+        F = torch.FloatTensor(np.vstack([env.embed(env.s2f(s)) for s in range(nS)]))
+        R = F * theta0
+        Z = torch.softmax(torch.vstack([(R[r] * R).sum(1) for r in range(nZ)]), axis=1)
+        acc = (Z*torch.eye(nZ)).sum(1).mean()
+        loss = .5*(acc - threshold).square()
+        optim.zero_grad()
+        loss.backward() 
+        optim.step()
+        converge = (.5*np.abs(loss.data.numpy() - loss_prev) < tol) or (i > 800)
+        if converge: break
+        # cache 
+        loss_prev = loss.data.numpy()
+        i += 1
+
+    # decide the encoder theta 
+    F = np.vstack([env.embed(env.s2f(s)) for s in range(nS)])
+    R = F * theta0.data.numpy()[0]
+    tar = softmax(np.vstack([(R[r] * R).sum(1) for r in range(nZ)]), axis=1)
+
+    # train a theta that do this classification 
+    theta = torch.zeros([nI, nZ]).requires_grad_()
+    optim = torch.optim.SGD([theta], lr=0.25)
+    i, loss_prev = 0, np.inf
+    tar = torch.FloatTensor(tar)
+
+    while True:
+        # forward
+        ZHat = torch.softmax(torch.FloatTensor(F)@theta, dim=1)
+        loss = (-tar*torch.log(ZHat+eps_)).sum(1).mean(0)
+        # check convergence 
+        converge = (.5*np.abs(loss.data.numpy() - loss_prev) < tol) or (i > 800)
+        if converge: break
+        # backward 
+        optim.zero_grad()
+        loss.backward()
+        optim.step()
+        # cache 
+        loss_prev = loss.data.numpy()
+        i += 1
+
+    return theta.detach().numpy()  
+
+def pretrain_exp2(threshold=.97):
+    theta_dict = {}
+    for block_type in ['cons', 'cont', 'conf']:
+        theta_dict[block_type] = pretrain_fea(block_type, threshold)
+    fname = f'{pth}/data/exp2_ecpg_weight.pkl'
+    with open(fname, 'wb')as handle: pickle.dump(theta_dict, handle)
+
 if __name__ == '__main__':
     
     print(f'\nPreprocessing {args.data_set}...')
     pre_process(data_set=args.data_set)
+    if args.data_set.split('-')[0]=='exp1': pretrain_exp1()
+    if args.data_set.split('-')[0]=='exp2': pretrain_exp2()
+    

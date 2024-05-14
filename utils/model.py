@@ -1,14 +1,18 @@
+import os 
+import torch
 import numpy as np 
 import pandas as pd 
-import torch
- 
+from copy import deepcopy
+
 from functools import lru_cache
 from scipy.special import softmax 
-from scipy.stats import gamma, uniform, beta
+from scipy.stats import halfnorm
 
 from utils.fit import *
-from utils.env_fn import AEtask
+from utils.env_fn import *
 from utils.viz import *
+
+pth = os.path.dirname(os.path.abspath(__file__))
 
 eps_ = 1e-13
 max_ = 1e+13
@@ -17,8 +21,8 @@ max_ = 1e+13
 #          Axuilliary           #
 # ------------------------------#
 
-def mask_fn(nA, a1, a2):
-    return (np.eye(nA)[[a1, a2], :]).sum(0, keepdims=True)
+def mask_fn(nA, a_ava):
+    return (np.eye(nA)[a_ava, :]).sum(0, keepdims=True)
 
 def MI(p_X, p_Y1X, p_Y):
     return (p_X*p_Y1X*(np.log(p_Y1X+eps_)-np.log(p_Y.T+eps_))).sum()
@@ -26,6 +30,10 @@ def MI(p_X, p_Y1X, p_Y):
 def clip_exp(x):
     x = np.clip(x, a_min=-max_, a_max=50)
     return np.exp(x) 
+
+def step(w, lr):
+    w.data -= lr*w.grad.data
+    w.grad.data.zero_()
 
 # ------------------------------#
 #         Agent wrapper         #
@@ -58,7 +66,7 @@ class wrapper:
                      data, 
                      self.agent.p_bnds,
                      self.agent.p_pbnds, 
-                     self.agent.p_name,
+                     self.agent.p_names,
                      self.agent.p_priors if p_priors is None else p_priors,
                      method,
                      alg, 
@@ -105,7 +113,10 @@ class wrapper:
         ll   = 0
        
         ## loop to simulate the responses in the block 
-        for _, row in block_data.iterrows():
+        for t, row in block_data.iterrows():
+
+            if t>20:
+                pass
 
             # predict stage: obtain input
             ll += env.eval_fn(row, subj)
@@ -242,7 +253,7 @@ class base_agent:
     name     = 'base'
     p_bnds   = None
     p_pbnds  = []
-    p_name   = []  
+    p_names  = []  
     p_priors = []
     p_trans  = []
     p_links  = []
@@ -258,39 +269,27 @@ class base_agent:
         self.nA  = env.nA 
         self.nD  = env.nD 
         self.nF  = env.nF
+        self.nI  = env.nI
+        self.nProbe = env.nProbe
         self.load_params(params)
         self._init_embed()
-        self._init_Believes()
-        self._init_Buffer()
+        self._init_buffer()
+        self._init_agent()
         
     def load_params(self, params): 
         return NotImplementedError
     
-    def orig_params(self, params):
-        return [tran(p) for p, tran in zip(params, self.p_trans)]
-    
     def _init_embed(self):
-        def onehot(s):
-            return np.eye(self.nS)[[s], :]
-        self.embed = onehot
+        self.embed = self.env.embed
+        self.s2f   = self.env.s2f
+        self.F     = np.vstack([self.embed(self.s2f(s)) for s in self.env.stimuli])
 
-    def _init_Buffer(self):
+    def _init_buffer(self):
         self.mem = simpleBuffer()
     
-    def _init_Believes(self):
-        self._init_Critic()
-        self._init_Actor()
-        self._init_Dists()
-
-    def _init_Critic(self):
-        self.q_SA = np.ones([self.nS, self.nA]) / self.nA
-
-    def _init_Actor(self):
-        self.pi_A1S = np.ones([self.nS, self.nA]) / self.nA
-
-    def _init_Dists(self): 
-        pass
-
+    def _init_agent(self):
+        return NotImplementedError
+    
     def learn(self): 
         return NotImplementedError
 
@@ -305,12 +304,12 @@ class base_agent:
         for s in range(self.nS):
             for act in acts:
                 a1, a2 = act
-                pi[s, :] += self.policy(s, a_ava1=a1, a_ava2=a2)   
+                pi[s, :] += self.policy(self.s2f(s), a_ava=[a1, a2])   
         return pi
 
 class human:
    name  = 'Human'
-   color = viz.Blue     
+   color = viz.Blue    
 
 class fea_base:
 
@@ -328,50 +327,21 @@ class fea_base:
 #         Classic models        #
 # ------------------------------#
 
-@lru_cache(typed=False)
-def pretrain(thershold=.99):
-    '''Cached to speed up model fitting 
-    '''
-    env = AEtask('cont')
-    nS = env.nS
-    F = np.eye(nS)
-    Z = np.eye(nS)*(thershold-(1-thershold)/nS) \
-        + np.ones([nS, nS])*(1-thershold)/nS
-    theta0 = 3.5
-    i, loss_prev, lr, tol = 0, np.inf, .15, 1e-8
-
-    while True:
-        # forward
-        ZHat = softmax(F*theta0, axis=1)
-        loss = (-Z*np.log(ZHat+eps_)).sum(1).mean(0)
-        # check convergence 
-        converge = (.5*np.abs(loss - loss_prev) < tol) or (i > 600)
-        if converge: break
-        # backward 
-        grad = F*(ZHat - Z) / F.shape[0]
-        theta0 -= lr*grad.sum()
-        # cache 
-        loss_prev = loss
-        i += 1
-
-    # decide the encoder theta 
-    theta = np.eye(nS)*theta0
-
-    return theta 
-
 class rmPG(base_agent):
     name     = 'RMPG'
-    p_bnds   = [(np.log(eps_), np.log(50))]
-    p_pbnds  = [(-2, 2)]
-    p_name   = ['α']  
-    p_print  = ['alpha']
-    p_priors = []
-    p_poi    = ['α'] 
-    p_trans  = [lambda x: clip_exp(x)]
-    p_links  = [lambda x: np.log(x+eps_)]
-    n_params = len(p_name)
+    p_names  = ['alpha'] 
+    p_bnds   = [(0, 500)]
+    p_pbnds  = [(0, 5)]
+    p_poi    = p_names
+    p_priors = [halfnorm(0, 50)]*len(p_names)
+    p_trans  = [lambda x: x]*len(p_names)
+    p_links  = [lambda x: x]*len(p_names)
+    n_params = len(p_names)
     insights = ['pol']
     color    = np.array([200, 200, 200]) / 255
+    marker   = 's'
+    size     = 20
+    alpha    = .8
 
     def load_params(self, params):
         # from gaussian space to actual space  
@@ -379,25 +349,20 @@ class rmPG(base_agent):
         self.alpha_pi = params[0]
         self.b        = 1/2
     
-    def _init_Believes(self):
-        self._init_Actor()
-
-    def _init_Actor(self):
+    def _init_agent(self):
         self.phi    = np.zeros([self.nS, self.nA]) 
-        self.pi_A1S = softmax(self.phi, axis=1)
     
     def learn(self):
-        self._learnActor()
+        self._learn_dec()
 
-    def _learnActor(self):
+    def _learn_dec(self):
+
         # get data 
-        s, a1, a2, a, r = self.mem.sample('s', 'a_ava1', 'a_ava2', 'a', 'r')
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
         
-        # one-hot encode the stimuli 
-        f = self.embed(s)
-        
-        # forward 
-        m_A   = mask_fn(self.nA, a1, a2)
+        # forward
+        f = self.embed(fstr)
+        m_A   = mask_fn(self.nA, a_ava)
         p_A1s = softmax(f@self.phi-(1-m_A)*max_, axis=1)
         u_sa = r - self.b
 
@@ -405,18 +370,11 @@ class rmPG(base_agent):
         gPhi = -f.T@(np.eye(self.nA)[a, :] - p_A1s)*u_sa
         self.phi -= self.alpha_pi*gPhi
 
-        self.update_pol()
-
-    def update_pol(self):
-        pass 
-
-    def policy(self, s, **kwargs):
-        '''The forward function
-        '''
-        m_A   = mask_fn(self.nA, kwargs['a_ava1'], kwargs['a_ava2'])
-        f = self.embed(s)
-        p_A1s = softmax(f@self.phi -(1-m_A)*max_, axis=1)
-        return p_A1s.reshape([-1])
+    def policy(self, fstr, **kwargs):
+        f   = self.embed(fstr)
+        m_A = mask_fn(self.nA, kwargs['a_ava'])
+        pi  = softmax(f@self.phi-(1-m_A)*max_, axis=1)
+        return pi.reshape([-1])
 
 class ecPG_sim(base_agent):
     '''Efficient coding policy gradient (analytical)
@@ -441,24 +399,20 @@ class ecPG_sim(base_agent):
     The same logics applied to fECPG.
     '''
     name     = 'ECPG'
-    p_bnds   = [(np.log(eps_), np.log(50)), 
-                (np.log(eps_), np.log(50)),
-                (np.log(eps_), np.log(50))]
-    p_pbnds  = [(-2, 2), (-2, 2), (-10, 2)]
-    p_name   = ['α_ψ', 'α_ρ', 'λ']  
-    p_print  = ['alpha_psi', 'alpha_rho', 'lmbda']
-    p_poi    = p_name
-    p_priors = []
-    p_trans  = [lambda x: clip_exp(x),
-                lambda x: clip_exp(x),
-                lambda x: clip_exp(x)]
-    p_links  = [lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_),]
-    n_params = len(p_name)
-    voi      = ['i_SZ', 'i_ZA']
+    p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
+    p_bnds   = [(0, 500)]*len(p_names)
+    p_pbnds  = [(0, 20), (0, 3), (0, 1)]
+    p_poi    = p_names
+    p_priors = [halfnorm(0, 50)]*len(p_names)
+    p_trans  = [lambda x: x]*len(p_names)
+    p_links  = [lambda x: x]*len(p_names)
+    n_params = len(p_names)
+    voi      = []
     insights = ['enc', 'dec', 'pol']
     color    = viz.Red
+    marker   = '^'
+    size     = 65
+    alpha    = 1
 
     def load_params(self, params):
         # from gaussian space to actual space  
@@ -468,34 +422,40 @@ class ecPG_sim(base_agent):
         self.lmbda      = params[2]
         self.b          = .5
 
-    def _init_Believes(self):
-        self._init_Actor()
-        self._init_Dists()
+    def _init_agent(self):
+        self.nZ = self.nS
+        fname = f'{pth}/../data/exp1_ecpg_weight.pkl'
+        with open(fname, 'rb')as handle: theta = pickle.load(handle)
+        self.theta = deepcopy(theta)
+        self.phi   = np.zeros([self.nS, self.nA]) 
+        self._learn_pZ()
 
-    def _init_Actor(self):
-        self.nZ = self.nS 
-        self.theta   = pretrain().copy()
-        self.psi_Z1S = softmax(self.theta, axis=1) # nSxnZ 
-        self.phi     = np.zeros([self.nS, self.nA]) 
-        self.rho_A1Z = softmax(self.phi, axis=1)
-    
-    def _init_Dists(self):
-        self.p_S = np.ones([self.nS, 1]) / self.nS  # nSx1 
-        self.p_Z = self.psi_Z1S.T @ self.p_S        # nZxnS @ nSx1 
-    
+    def _learn_pZ(self):
+        self.p_Z1S = softmax(self.F@self.theta, axis=1)
+        self.p_S   = np.ones([self.nS, 1]) / self.nS  # nSx1 
+        self.p_Z   = self.p_Z1S.T @ self.p_S  
+
+    def policy(self, fstr, **kwargs):
+        f = self.embed(fstr)
+        p_Z1s = softmax(f@self.theta, axis=1)
+        m_A   = mask_fn(self.nA, kwargs['a_ava'])
+        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
+        # renormalize to avoid numeric problem
+        pi = (p_Z1s@p_A1Z).reshape([-1])
+        return pi / pi.sum()
+        
     def learn(self):
-        self._learnActor()
-        self._learnPz()
+        self._learn_enc_dec()
+        self._learn_pZ()
 
-    def _learnActor(self):
+    def _learn_enc_dec(self):
         # get data 
-        s, a1, a2, a, r = self.mem.sample('s', 'a_ava1', 'a_ava2', 'a', 'r')
-        # one-hot encode the stimuli 
-        f = self.embed(s)  
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
        
         # prediction 
+        f     = self.embed(fstr)
         p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a1, a2)
+        m_A   = mask_fn(self.nA, a_ava)
         p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
         p_a1Z = p_A1Z[:, [a]]
         u = np.array([r - self.b])[:, np.newaxis] 
@@ -508,7 +468,7 @@ class ecPG_sim(base_agent):
         # term in calculating gTheta.
         log_dif = np.log(p_Z1s+eps_)-np.log(self.p_Z.T+eps_)  
         sTheta = (u*p_a1Z.T - self.lmbda*log_dif)
-        gTheta  = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
+        gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
                     sTheta - p_Z1s@sTheta.T))
        
         sPhi = u*p_Z1s.T
@@ -516,24 +476,6 @@ class ecPG_sim(base_agent):
 
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
-
-        self.update_psi_rho()
-    
-    def update_psi_rho(self):
-        self.psi_Z1S = softmax(self.theta, axis=1)
-        self.rho_A1Z = softmax(self.phi,   axis=1)
-        
-    def _learnPz(self):
-        self.p_Z = self.psi_Z1S.T @ self.p_S
-
-    def policy(self, s, **kwargs):
-        f = self.embed(s)
-        p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, kwargs['a_ava1'], kwargs['a_ava2'])
-        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
-        p_A1s = (p_Z1s@p_A1Z).reshape([-1])
-        p_A1s /= p_A1s.sum()
-        return p_A1s.reshape([-1])
     
     # --------- some predictions ----------- #
         
@@ -569,21 +511,20 @@ class ecPG(ecPG_sim):
     The same logics applied to fECPG.
     '''
 
-    def _learnActor(self):
+    def _learn_enc_dec(self):
         # get data 
-        s, a1, a2, a, r = self.mem.sample('s', 'a_ava1', 'a_ava2', 'a', 'r')
-        # one-hot encode the stimuli 
-        f = self.embed(s)  
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
        
         # prediction 
+        f     = self.embed(fstr)
         p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a1, a2)
+        m_A   = mask_fn(self.nA, a_ava)
         p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
         p_a1Z = p_A1Z[:, [a]]
         u = np.array([r - self.b])[:, np.newaxis] 
         
         # backward
-        log_dif = np.log(p_Z1s+eps_)-np.log(self.p_Z.T+eps_)
+        log_dif = np.log(p_Z1s+eps_)-np.log(self.p_Z.T+eps_)  
         sTheta = (u*p_a1Z.T/(self.lmbda+eps_) - log_dif)
         gTheta  = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
                     sTheta - p_Z1s@sTheta.T))
@@ -594,25 +535,22 @@ class ecPG(ecPG_sim):
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
 
-        self.update_psi_rho()
-
 class caPG(ecPG):
     name     = 'CAPG'
-    p_bnds   = [(np.log(eps_), np.log(50)), 
-                (np.log(eps_), np.log(50))]
-    p_pbnds  = [(-2, 2), (-2, 2)]
-    p_name   = ['α_ψ', 'α_ρ']  
-    p_print  = ['alpha_psi', 'alpha_rho']
-    p_poi    = p_name
-    p_priors = []
-    p_trans  = [lambda x: clip_exp(x),
-                lambda x: clip_exp(x)]
-    p_links  = [lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_)]
-    n_params = len(p_name)
-    voi      = ['i_SZ', 'i_ZA']
+    p_names  = ['alpha_psi', 'alpha_rho']  
+    p_bnds   = [(0, 500)]*len(p_names)
+    p_pbnds  = [(5, 30), (0, 3)]
+    p_poi    = p_names
+    p_priors = [halfnorm(0, 50)]*len(p_names)
+    p_trans  = [lambda x: x]*len(p_names)
+    p_links  = [lambda x: x]*len(p_names)
+    n_params = len(p_names)
+    voi      = []
     insights = ['enc', 'dec', 'pol']
     color    = viz.r2
+    marker   = 'o'
+    size     = 30
+    alpha    = .8
 
     def load_params(self, params):
         # from gaussian space to actual space  
@@ -621,22 +559,23 @@ class caPG(ecPG):
         self.alpha_rho  = params[1]
         self.b          = 1/2
 
-    def _learnActor(self):
-        # get data 
-        s, a1, a2, a, r = self.mem.sample('s', 'a_ava1', 'a_ava2', 'a', 'r')
+    def _learn_pZ(self):
+        pass 
 
-        # one-hot encode the stimuli 
-        f = self.embed(s) 
+    def _learn_enc_dec(self):
+        # get data 
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
        
         # prediction 
+        f     = self.embed(fstr)
         p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a1, a2)
+        m_A   = mask_fn(self.nA, a_ava)
         p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
         p_a1Z = p_A1Z[:, [a]]
         u = np.array([r - self.b])[:, np.newaxis] 
         
         # backward
-        sTheta = u*p_a1Z.T
+        sTheta = (u*p_a1Z.T)
         gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
                     sTheta - p_Z1s@sTheta.T))
        
@@ -646,138 +585,106 @@ class caPG(ecPG):
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
 
-        # update the encoder 
-        self.update_psi_rho()
+class l2PG(ecPG):
+    name     = 'L2PG'
+    p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
+    p_bnds   = [(0, 500), (0, 500), (0, 500)]
+    p_pbnds  = [(0, 30), (0, 10), (0, 1)]
+    p_poi    = p_names
+    p_priors = [halfnorm(0, 50)]*len(p_names)
+    p_trans  = [lambda x: x]*len(p_bnds)
+    p_links  = [lambda x: x]*len(p_bnds)
+    poi_raw  = [(.01, 15), (.01, 15), (.01, 2)]     
+    n_params = len(p_names)
+    voi      = []
+    insights = ['encoder', 'decoder', 'policy', 'attn', 'theta']
+    color    = viz.Green
 
+    def _learn_pZ(self):
+        pass 
+
+    def _learn_enc_dec(self):
+        # get data 
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
+       
+        # prediction 
+        f     = self.embed(fstr)
+        p_Z1s = softmax(f@self.theta, axis=1)
+        m_A   = mask_fn(self.nA, a_ava)
+        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
+        p_a1Z = p_A1Z[:, [a]]
+        u = np.array([r - self.b])[:, np.newaxis] 
+        
+        # backward
+        l2_loss = self.theta/np.sqrt(np.square(self.theta).sum())
+        sTheta = (u*p_a1Z.T)/(self.lmbda+eps_)
+        gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
+                    sTheta - p_Z1s@sTheta.T)) + l2_loss
+       
+        sPhi = u*p_Z1s.T
+        gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
+
+        self.theta -= self.alpha_psi * gTheta
+        self.phi   -= self.alpha_rho * gPhi
+
+class l1PG(l2PG):
+    name     = 'L1PG'
+
+    def _learn_enc_dec(self):
+        # get data 
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
+       
+        # prediction 
+        f     = self.embed(fstr)
+        p_Z1s = softmax(f@self.theta, axis=1)
+        m_A   = mask_fn(self.nA, a_ava)
+        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
+        p_a1Z = p_A1Z[:, [a]]
+        u = np.array([r - self.b])[:, np.newaxis] 
+        
+        # backward
+        l1_loss = np.sign(self.theta)
+        sTheta = (u*p_a1Z.T)/(self.lmbda+eps_)
+        gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
+                    sTheta - p_Z1s@sTheta.T)) + l1_loss
+       
+        sPhi = u*p_Z1s.T
+        gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
+
+        self.theta -= self.alpha_psi * gTheta
+        self.phi   -= self.alpha_rho * gPhi
+ 
 # ------------------------------#
 #      Feature-based models     #
 # ------------------------------# 
 
-@lru_cache(typed=False)
-def pretrain_fea(block_type, threshold=.99):
-    '''Cached to speed up model fitting 
-    '''
-    env = AEtask(block_type)
-    nS, nZ, nF = env.nS, env.nS, env.nF
-    theta0 = (torch.ones(1)).requires_grad_()
-    lr, tol = .1, 1e-10
-    i, loss_prev = 0, np.inf
-
-    # forward
-    while True:
-        F = torch.FloatTensor(np.vstack([env.embed(s) for s in range(nS)]))
-        R = F * theta0
-        Z = torch.softmax(torch.vstack([(R[r] * R).sum(1) for r in range(nZ)]), axis=1)
-        acc = (Z*torch.eye(nS)).sum(1).mean()
-        loss = .5*(acc - threshold).square()
-        loss.backward() 
-        theta0.data -= lr * theta0.grad.data
-        theta0.grad.data.zero_()
-        converge = (.5*np.abs(loss.data.numpy() - loss_prev) < tol) or (i > 800)
-        if converge: break
-        # cache 
-        loss_prev = loss.data.numpy()
-        i += 1
-
-    # decide the encoder theta 
-    theta = np.zeros([nS, nZ])
-    F = np.vstack([env.embed(s) for s in range(nS)])
-    R = F * theta0.data.numpy()[0]
-    tar = softmax(np.vstack([(R[r] * R).sum(1) for r in range(nZ)]), axis=1)
-
-    # train a theta that do this classification 
-    theta = np.zeros([nF, nZ])
-    lr = .21
-    i, loss_prev = 0, np.inf
-
-    while True:
-        # forward
-        ZHat = softmax(F@theta, axis=1)
-        loss = (-tar*np.log(ZHat+eps_)).sum(1).mean(0)
-        # check convergence 
-        converge = (.5*np.abs(loss - loss_prev) < tol) or (i > 800)
-        if converge: break
-        # backward 
-        grad = F.T@(ZHat - tar) / F.shape[0]
-        theta -= lr*grad
-        # cache 
-        loss_prev = loss
-        i += 1
-
-    return theta 
-
 class rmPG_fea(fea_base, rmPG):
     name     = 'fRMPG'
-    p_bnds   = [(np.log(eps_), np.log(50))]
-    p_pbnds  = [(-2, 2)]
-    p_name   = ['α']  
-    p_print  = ['alpha']
-    p_poi    = p_name
-    p_priors = []
-    p_trans  = [lambda x: clip_exp(x)]
-    p_links  = [lambda x: np.log(x+eps_)]
-    n_params = len(p_name)
     voi      = []
     insights = ['pol']
-    color    = viz.g
 
-    def _init_Actor(self):
-        self.nProbe = 1 
-        self.F = np.vstack([self.embed(s) for s in range(self.nS+self.nProbe)]) 
-        self.phi = np.zeros([self.nF, self.nA])
-        self.pi_A1S = softmax(self.F@self.phi, axis=1)
-
-    def _init_embed(self):
-        self.embed = self.env.embed
-
-    def update_pol(self):
-        self.pi_A1S = softmax(self.F@self.phi, axis=1)
+    def _init_agent(self):
+        self.phi    = np.zeros([self.nI, self.nA]) 
 
 class ecPG_fea_sim(fea_base, ecPG_sim):
     '''Feature efficient coding policy gradient (analytical)
     '''
     name     = 'fECPG'
-    p_bnds   = [(np.log(eps_), np.log(50)), 
-                (np.log(eps_), np.log(50)),
-                (np.log(eps_), np.log(50))]
-    p_pbnds  = [(-2, 2), (-2, 2), (-10, -.15)]
-    p_name   = ['α_ψ', 'α_ρ', 'λ']  
-    p_print  = ['alpha_psi', 'alpha_rho', 'lmbda']
-    p_poi    = p_name
-    p_priors = []
-    p_trans  = [lambda x: clip_exp(x),
-                lambda x: clip_exp(x),
-                lambda x: clip_exp(x),]
-    p_links  = [lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_),]
-    n_params = len(p_name)
-    voi      = ['i_SZ', 'i_ZA']
-    insights = ['enc', 'dec', 'pol', 'attn']
-    color    = viz.Red
 
-    def _init_embed(self):
-        self.embed = self.env.embed
-        
-    def _init_Dists(self):
-        self.p_S = np.ones([self.nS, 1]) / self.nS  # nSx1 
+    def _init_agent(self):
+        self.nZ = self.nS
+        fname = f'{pth}/../data/exp2_ecpg_weight.pkl'
+        with open(fname, 'rb')as handle: theta_dict = pickle.load(handle)
+        self.theta = deepcopy(theta_dict[self.env.block_type])
+        self.phi   = np.zeros([self.nZ, self.nA]) 
+        self._learn_pZ()
+
+    def _learn_pZ(self):
+        self.p_Z1S = softmax(self.F@self.theta, axis=1)
+        self.p_S = np.ones([self.nS, 1]) / self.nS 
         self.p_S = np.vstack([self.p_S, 0])
-        self.p_Z = self.psi_Z1S.T @ self.p_S        # nZxnS @ nSx1 
-
-    def _init_Actor(self):
-        self.nZ = self.nS 
-        self.nProbe  = 1
-        block_type   = self.env.block_type
-        self.theta   = pretrain_fea(block_type).copy()
-        self.F       = np.vstack([self.embed(s) for s in range(self.nS+self.nProbe)]) #nSxnF
-        self.psi_Z1S = softmax(self.F@self.theta, axis=1) # nFxnZ 
-        self.phi     = np.zeros([self.nS, self.nA]) 
-        self.rho_A1Z = softmax(self.phi, axis=1)
+        self.p_Z   = self.p_Z1S.T @ self.p_S  
     
-    def update_psi_rho(self):
-        self.psi_Z1S = softmax(self.F@self.theta, axis=1) # nFxnZ 
-        self.rho_A1Z = softmax(self.phi, axis=1)
-
     def get_attn(self):
         '''Perturbation-based attention
         '''
@@ -805,21 +712,20 @@ class ecPG_fea_sim(fea_base, ecPG_sim):
 class ecPG_fea(ecPG_fea_sim):
     '''Feature efficient coding policy gradient (fitting)
     '''
-    def _learnActor(self):
+    def _learn_enc_dec(self):
         # get data 
-        s, a1, a2, a, r = self.mem.sample('s', 'a_ava1', 'a_ava2', 'a', 'r')
-        # one-hot encode the stimuli 
-        f = self.embed(s)  
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
        
         # prediction 
+        f     = self.embed(fstr)
         p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a1, a2)
+        m_A   = mask_fn(self.nA, a_ava)
         p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
         p_a1Z = p_A1Z[:, [a]]
         u = np.array([r - self.b])[:, np.newaxis] 
         
         # backward
-        log_dif = np.log(p_Z1s+eps_)-np.log(self.p_Z.T+eps_)
+        log_dif = np.log(p_Z1s+eps_)-np.log(self.p_Z.T+eps_)  
         sTheta = (u*p_a1Z.T/(self.lmbda+eps_) - log_dif)
         gTheta  = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
                     sTheta - p_Z1s@sTheta.T))
@@ -830,61 +736,101 @@ class ecPG_fea(ecPG_fea_sim):
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
 
-        self.update_psi_rho()
-
-class caPG_fea(ecPG_fea):
+class caPG_fea(caPG):
     name     = 'fCAPG'
-    p_bnds   = [(np.log(eps_), np.log(50)), 
-                (np.log(eps_), np.log(50))]
-    p_pbnds  = [(-2, 2), (-2, 2)]
-    p_name   = ['α_ψ', 'α_ρ'] 
-    p_print  = ['alpha_psi', 'alpha_rho', 'lmbda']
-    p_poi    = p_name 
-    p_priors = []
-    p_trans  = [lambda x: clip_exp(x),
-                lambda x: clip_exp(x)]
-    p_links  = [lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_)]
-    n_params = len(p_name)
-    voi      = ['i_SZ', 'i_ZA']
-    insights = ['enc', 'dec', 'pol', 'attn']
-    color    = viz.r2
 
-    def load_params(self, params):
-        # from gaussian space to actual space  
-        params = [f(p) for f, p in zip(self.p_trans, params)]
-        self.alpha_psi  = params[0]
-        self.alpha_rho  = params[1]
-        self.b          = 1/2
+    def _init_agent(self):
+        self.nZ = self.nS
+        fname = f'{pth}/../data/exp2_ecpg_weight.pkl'
+        with open(fname, 'rb')as handle: theta_dict = pickle.load(handle)
+        self.theta = deepcopy(theta_dict[self.env.block_type])
+        self.phi   = np.zeros([self.nZ, self.nA]) 
+    
+    def get_attn(self):
+        '''Perturbation-based attention
+        '''
+        attn = np.zeros([3])
+        for d in range(3): 
+            attn_d = 0 
+            for s in range(self.nS):
+                f_orig = self.embed(s)
+                pi_orig = softmax(f_orig@self.theta, axis=1)
+                nD = f_orig.reshape([3, -1]).shape[1]
+                pi_pert = [] 
+                for i in range(nD):
+                    f_pert = f_orig.reshape([3, -1]).copy()
+                    f_pert[d, :] = np.eye(nD)[i, :]
+                    f_pert = f_pert.reshape([1, -1])
+                    pi_pert.append(softmax(f_pert@self.theta, axis=1).reshape([-1]))
+                pi_pert = np.vstack(pi_pert)
+                # kld for each stimuli 
+                attn_d += (pi_orig* (np.log(pi_orig+eps_) - 
+                                     np.log(pi_pert+eps_))).sum(1).mean()
+            attn[d] = attn_d
 
-    def _learnActor(self):
+        return attn
+
+class l2PG_fea(l2PG):
+    name     = 'fL2PG'
+
+    def _init_agent(self):
+        self.nZ = self.nS
+        fname = f'{pth}/../data/exp2_ecpg_weight.pkl'
+        with open(fname, 'rb')as handle: theta_dict = pickle.load(handle)
+        self.theta = deepcopy(theta_dict[self.env.block_type])
+        self.phi   = np.zeros([self.nZ, self.nA]) 
+    
+    def get_attn(self):
+        '''Perturbation-based attention
+        '''
+        attn = np.zeros([3])
+        for d in range(3): 
+            attn_d = 0 
+            for s in range(self.nS):
+                f_orig = self.embed(s)
+                pi_orig = softmax(f_orig@self.theta, axis=1)
+                nD = f_orig.reshape([3, -1]).shape[1]
+                pi_pert = [] 
+                for i in range(nD):
+                    f_pert = f_orig.reshape([3, -1]).copy()
+                    f_pert[d, :] = np.eye(nD)[i, :]
+                    f_pert = f_pert.reshape([1, -1])
+                    pi_pert.append(softmax(f_pert@self.theta, axis=1).reshape([-1]))
+                pi_pert = np.vstack(pi_pert)
+                # kld for each stimuli 
+                attn_d += (pi_orig* (np.log(pi_orig+eps_) - 
+                                     np.log(pi_pert+eps_))).sum(1).mean()
+            attn[d] = attn_d
+
+        return attn
+    
+class l1PG_fea(l2PG_fea):
+    name     = 'L1PG'
+
+    def _learn_enc_dec(self):
         # get data 
-        s, a1, a2, a, r = self.mem.sample('s', 'a_ava1', 'a_ava2', 'a', 'r')
-
-        # one-hot encode the stimuli 
-        f = self.embed(s) 
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
        
         # prediction 
+        f     = self.embed(fstr)
         p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a1, a2)
+        m_A   = mask_fn(self.nA, a_ava)
         p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
         p_a1Z = p_A1Z[:, [a]]
         u = np.array([r - self.b])[:, np.newaxis] 
         
         # backward
-        sTheta = u*p_a1Z.T
+        l1_loss = np.sign(self.theta)
+        sTheta = (u*p_a1Z.T)/(self.lmbda+eps_)
         gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
-                    sTheta - p_Z1s@sTheta.T))
+                    sTheta - p_Z1s@sTheta.T)) + l1_loss
        
         sPhi = u*p_Z1s.T
         gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
 
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
-
-        # update the encoder 
-        self.update_psi_rho()
-
+    
 # ----------------------------------------#
 #      Representation learning models     #
 # ----------------------------------------# 
@@ -903,9 +849,9 @@ class ACL(base_agent):
                 (np.log(eps_), np.log(50)),
                 (np.log(eps_), np.log(50))]
     p_pbnds  = [(-3, 3), (-1, 3), (-3, 3), (-3, 3)]
-    p_name   = ['η', 'β', 'ε', 'η_a']
+    p_names  = ['η', 'β', 'ε', 'η_a']
     p_print  = ['eta', 'beta', 'epsilon', 'eta_a']
-    p_poi    = p_name
+    p_poi    = p_names
     p_priors = []
     p_trans  = [lambda x: 1/(1+clip_exp(-x)),
                 lambda x: clip_exp(x),
@@ -915,7 +861,7 @@ class ACL(base_agent):
                 lambda x: np.log(x+eps_),
                 lambda x: np.log(x+eps_)-np.log(1-x),
                 lambda x: np.log(x+eps_)-np.log(1-x)]
-    n_params = len(p_name)
+    n_params = len(p_names)
     voi = []
     insights = ['pol', 'attn']
     color = np.array([201, 173, 167]) / 255
@@ -998,7 +944,7 @@ class LC(base_agent):
                 (np.log(eps_), np.log(50)),
                 (-50, 50),]
     p_pbnds  = [(-2, 2), (-1, 2), (-1, 2), (-2, 2)]
-    p_name   = ['η', 'α', 'β', 'w']
+    p_names  = ['η', 'α', 'β', 'w']
     p_print  = ['eta', 'alpha', 'beta', 'w']
     p_poi    = ['η', 'α', 'β']
     p_priors = []
@@ -1010,7 +956,7 @@ class LC(base_agent):
                 lambda x: np.log(x+eps_),
                 lambda x: np.log(x+eps_),
                 lambda x: x]
-    n_params = len(p_name)
+    n_params = len(p_names)
     voi = ['last_z']
     insights = ['pol', 'p_Z1S']
     color    =  np.array([154, 140, 152]) / 255

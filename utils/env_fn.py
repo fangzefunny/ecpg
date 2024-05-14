@@ -4,59 +4,90 @@ import pandas as pd
 eps_ = 1e-13
 max_ = 1e+13
     
-class AEtask:
-    name = 'AE task'
-    nS = 4
+class exp1_task:
+    name = 'AE task basic'
+    stimuli = [0, 1, 2, 3]
+    nS = len(stimuli)
     nA = 4
-    nD = 3
-    nF = 15
+    nProbe = 0
+    nD = nS
+    nF = 1
+    nI = 4
+    dims = [1, 1, 1, 1]
+    dim_name = ['d1', 'd2', 'd3', 'd4'] 
     voi = ['a', 'acc', 'r']
     n_cont_train = 6*10
-    n_cons_train = 6*10
-    n_conf_train = 6*10
-    block_types  = ['cont', 'cons', 'conf']
+    block_types = ['cont', 'cons', 'conf']
 
     def __init__(self, block_type='cont'):
-        assert block_type in ['cont', 'cons', 'conf']
         self.block_type = block_type
 
-    # ---------- Initialization ---------- #
+    @staticmethod
+    def embed(fstr):
+        o = [int(f) for f in fstr]
+        return np.hstack(o).reshape([1, -1])
+    
+    @staticmethod
+    def eval_fn(row, subj):
+    
+        # see state 
+        stage  = row['stage']
+        s      = int(row['s'])
+        f      = row['f']
+        a_ava1 = row['a_ava1']
+        a_ava2 = row['a_ava2']
+        pi     = subj.policy(f, s=s,
+                    a_ava=[a_ava1, a_ava2])
+        a      = int(row['a'])
+        r      = row['r'] 
+        ll     = np.log(pi[a]+eps_)
 
-    def embed(self, s):
-        '''
-            r1: shape
-            r2: color
-            r3: headdress
-        '''
-        f = np.zeros([3, 5])
-        if self.block_type== 'cont':
-            if s == 4:
-                f[0, 3] = 1
-                f[1, 0] = 1
-                f[2, 4] = 1
-            else:
-                f[:, s] = 1
+        # save the info and learn 
+        if stage == 'train':
+            subj.mem.push({
+                's': s, 
+                'f': f,
+                'a_ava': [a_ava1, a_ava2],
+                'a': a, 
+                'r': r,
+            })
+            subj.learn()
 
-        elif self.block_type == 'cons':
-            if s == 4:
-                f[0, 3] = 1
-                f[1, 0] = 1
-                f[2, 4] = 1
-            else:
-                f[1, s//2]   = 1
-                f[[0, 2], s] = 1
+        return ll
+    
+    @staticmethod
+    def sim_fn(row, subj, rng):
+        # ---------- Stage 1 ----------- #
 
-        elif self.block_type == 'conf':
-            if s == 4:
-                f[0, 3] = 1
-                f[1, 0] = 1
-                f[2, 4] = 1
-            else:
-                f[1, s%2]    = 1
-                f[[0, 2], s] = 1
+        # see state 
+        stage  = row['stage']
+        s      = int(row['s'])
+        f      = row['f']
+        a_ava1 = row['a_ava1']
+        a_ava2 = row['a_ava2']
+        pi     = subj.policy(f, s=s,
+                    a_ava=[a_ava1, a_ava2])
+        a      = int(rng.choice(exp1_task.nA, p=pi)) 
+        cor_a  = row['cor_a']     
+        r      = 1.*(a==cor_a)
 
-        return f.reshape([1, -1]) 
-        
+        # save the info and learn 
+        if stage == 'train':
+            subj.mem.push({
+                's': s, 
+                'f': f,
+                'a_ava': [a_ava1, a_ava2],
+                'a': a, 
+                'r': r,
+            })
+            subj.learn()
+
+        return a, pi[cor_a].copy(), r
+
+    def s2f(self, s):
+        lst = np.eye(self.nS)[int(s)]
+        return ''.join([str(int(i)) for i in lst])
+
     def instan(self, seed=1234):
         '''Instantiate the environment
         '''
@@ -113,11 +144,17 @@ class AEtask:
 
         block_data = pd.DataFrame.from_dict(block)
 
+        # get feature
+        block_data['f'] = block_data['s'].apply(self.s2f)
+        block_data['group'] = block_data['untrained'].apply(
+            lambda x: 'untrained' if x else 'trained'
+        )
+
         # get correct Act index
-        block_data['a*'] = block_data.apply(
+        block_data['cor_a'] = block_data.apply(
                     lambda x: x[f'a_ava{1+int((x["flip"] - x["freqAct"])**2)}'], axis=1)
 
-        for v in ['s', 'a_ava1', 'a_ava2', 'a*']:
+        for v in ['s', 'a_ava1', 'a_ava2', 'cor_a']:
             block_data[v] = block_data[v].apply(lambda x: int(x))
 
         # assign
@@ -129,61 +166,44 @@ class AEtask:
         )
         
         return block_data
-
-    # ---------- Interaction functions ---------- #
-    @staticmethod
-    def eval_fn(row, subj):
     
-        # see state 
-        stage  = row['stage']
-        s      = int(row['s'])
-        a_ava1 = row['a_ava1']
-        a_ava2 = row['a_ava2']
-        pi     = subj.policy(s, 
-                    a_ava1=a_ava1, 
-                    a_ava2=a_ava2)
-        a      = int(row['a'])
-        r      = row['r'] 
-        ll     = np.log(pi[a]+eps_)
+class exp2_task(exp1_task):
+    name = 'AE task feature'
+    stimuli = [0, 1, 2, 3, 4]
+    nS = 4
+    nProbe = 1
+    nA = 4
+    nD = 3
+    nF = 5
+    nI = nD*nF
+    dims = [5, 5, 5]
+    dim_name = ['shape', 'color', 'appendage'] 
+    voi = ['a', 'acc', 'r']
+    n_cont_train = 6*10
+    block_types = ['cont', 'cons', 'conf']
 
-        # save the info and learn 
-        if stage == 'train':
-            subj.mem.push({
-                's': s, 
-                'a_ava1': a_ava1,
-                'a_ava2': a_ava2,
-                'a': a, 
-                'r': r,
-            })
-            subj.learn()
+    def __init__(self, block_type='cont'):
+        self.block_type = block_type
 
-        return ll
-    
     @staticmethod
-    def sim_fn(row, subj, rng):
-        # ---------- Stage 1 ----------- #
+    def embed(fstr):
+        o = [np.eye(exp2_task.dims[i])[int(f)] 
+                for i, f in enumerate(fstr)]
+        return np.hstack(o).reshape([1, -1])
+    
+    def s2f(self, s):
+        '''
+            r1: shape
+            r2: color
+            r3: appendage
+        '''
+        if self.block_type== 'cont':
+            f = '304' if s==4 else ''.join([f'{s}']*3) 
 
-        # see state 
-        stage  = row['stage']
-        s      = int(row['s'])
-        a_ava1 = row['a_ava1']
-        a_ava2 = row['a_ava2']
-        pi     = subj.policy(s, 
-                    a_ava1=a_ava1, 
-                    a_ava2=a_ava2)
-        a      = int(rng.choice(AEtask.nA, p=pi)) 
-        a_aster= row['a*']     
-        r      = 1.*(a == a_aster)
+        elif self.block_type == 'cons':
+            f = '304' if s==4 else f'{s}{s//2}{s}'
 
-        # save the info and learn 
-        if stage == 'train':
-            subj.mem.push({
-                's': s, 
-                'a_ava1': a_ava1,
-                'a_ava2': a_ava2,
-                'a': a, 
-                'r': r,
-            })
-            subj.learn()
+        elif self.block_type == 'conf':
+            f = '304' if s==4 else f'{s}{s%2}{s}'
 
-        return a, pi[a_aster].copy(), r
+        return f

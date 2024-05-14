@@ -10,11 +10,348 @@ import seaborn as sns
 
 from utils.model import *
 from utils.viz import viz
-from utils.env_fn import AEtask
+from utils.env_fn import *
+from utils.tools import * 
 #viz.get_style()
 
 # define path
 pth = os.path.dirname(os.path.abspath(__file__))
+
+def generalize_exp1(ax, data_set, models):
+    data = [] 
+    for m in models:
+        datum = get_sim_data(data_set, m)
+        datum['group'] = datum['group'].map({
+                'control': 'trained', 
+                'trained': 'trained',
+                'untrained': 'untrained'
+        })
+        sel_datum = datum.query('stage=="test"').groupby(
+                    by=['sub_id', 'group'])['r'].mean().reset_index()
+        sel_datum['model'] = m
+        data.append(sel_datum)
+    data = pd.concat(data, axis=0)
+    viz.violin(ax, data=data, y='r',
+            x='group', order=['trained', 'untrained'],
+            hue='model', hue_order=models,
+            palette=[eval(m).color for m in models], 
+            errorbar='sd',
+            scatter_alpha=.75, 
+            scatter_size=4,
+            err_capsize=.15,
+            errorlw=2.75,
+            mean_marker_size=8.5,
+            pointdoge=.55)
+    ax.spines['left'].set_position(('axes',-0.08))
+    ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
+    ax.set_box_aspect(.8)
+    ax.set_xticks([0, 1])
+    ax.set_yticks([0, .25, .5, .75, 1])
+    ax.set_yticklabels([0.0, '', .5, '', 1.])
+    ax.set_xticklabels(['Trained', 'Untrained'])
+    ax.set_ylabel('Accuracy')
+    ax.set_ylim([-.01, 1.05])
+    ax.set_xlabel('')
+
+def learning_curve_exp1(ax, data, color=viz.new_blue, with_target_data_set=False):
+    # show the curve 
+    data['tps'] = data.query('group!="untrained"').apply(
+        lambda x: x['tps']+(x['stage']=="test")*10
+    , axis=1)
+    sel_data = data.groupby(
+        by=['sub_id', 'tps'])['r'].mean().reset_index()
+    if with_target_data_set==False:
+        # visualize
+        sns.lineplot(x='tps', y='r', data=sel_data, 
+                    err_style='band', 
+                    color=color,
+                    lw=3,
+                    ax=ax)
+    else:
+        # get target
+        target_data = get_sim_data(with_target_data_set, 'human')
+        target_data['tps'] = target_data.apply(
+            lambda x: x['tps']+(x['stage']=="test")*10
+        , axis=1)
+        target_data = target_data.query('group!="untrained"').groupby(
+                by=['sub_id', 'tps'])['r'].mean().reset_index()
+        # visualize the model prediction 
+        sns.lineplot(x='tps', y='r', data=sel_data, 
+                    err_style='band', 
+                    color=color,
+                    err_kws={'alpha':.55}, 
+                    lw=0,
+                    ax=ax)
+        # show the target data 
+        sns.lineplot(x='tps', y='r', data=target_data, 
+                    color=human.color,
+                    lw=0,
+                    ax=ax, 
+                    err_style='bars',  
+                    err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
+    ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1.5)
+    ax.spines['left'].set_position(('axes',-0.05))
+    ax.set_box_aspect(.47)
+    ax.set_xticks([0, 5, 10, 15])
+    ax.set_xticklabels([1, 6, 11, 16])
+    ax.set_yticks([.5, .6, .7, .8, .9])
+    ax.set_yticklabels([.5, '', .7, '', .9])
+    ax.set_ylabel('Acc.')
+    ax.set_xlabel('#Exposures per stimulus')
+    ax.set_ylim([.45, .9])
+
+def model_compare(ax, data_set, models, n_data=None, method='mle', cr='bic'):
+    crs_table = [] 
+    for m in models:
+        fname = f'{pth}/../fits/{data_set}/fit_sub_info-{m}-{method}.pkl'
+        with open(fname, 'rb')as handle: fit_info = pickle.load(handle)
+        sub_lst = list(fit_info.keys())
+        if 'group' in sub_lst: sub_lst.pop(sub_lst.index('group'))
+        crs = {'sub_id': [], 'aic': [], 'bic': [], 'model': []}
+        for sub_id in sub_lst:
+            crs['sub_id'].append(sub_id)
+            crs['aic'].append(fit_info[sub_id]['aic'])
+            crs['bic'].append(fit_info[sub_id]['bic'])
+            crs['model'].append(m)
+        crs_table.append(pd.DataFrame.from_dict(crs))
+    crs_table = pd.concat(crs_table, axis=0, ignore_index=True)
+    sel_table = crs_table.pivot_table(
+        values=cr,
+        index='sub_id',
+        columns='model',
+        aggfunc=np.mean,
+    ).reset_index()
+    sel_table[f'min_{cr}'] = sel_table.apply(
+        lambda x: np.min([x[m] for m in models]), 
+        axis=1)
+    sort_table = sel_table.sort_values(by=f'min_{cr}').reset_index()
+    sort_table['sub_seq'] = sort_table.index
+
+    for m in models:
+        model_fn = eval(m)
+        sns.scatterplot(x='sub_seq', y=m, data=sort_table,
+                        marker=model_fn.marker,
+                        size=model_fn.size,
+                        color=model_fn.color,
+                        alpha=model_fn.alpha,
+                        linewidth=1.1,
+                        edgecolor=model_fn.color if model_fn.marker in ['o'] else 'none',
+                        facecolor='none'if model_fn.marker in ['o'] else model_fn.color,
+                        ax=ax)
+
+    #n_data = (12*8+6*8)*2
+    if n_data is not None:
+        ax.axhline(y=-np.log(1/2)*n_data*2, xmin=0, xmax=1,
+                        color='k', lw=1, ls='--')
+    ax.set_xlim([-2, sort_table.shape[0]+5])
+    ax.legend(loc='upper left')
+    ax.spines['left'].set_position(('axes',-0.02))
+    ax.set_xlabel(f'Participant index\n(sorted by the minimum {cr} score over all models)')
+    ax.set_ylabel(cr.upper())
+
+def gen_per_model_exp2(ax, data):
+    if 'control' in data['group'].unique():
+        data['group'] = data['group'].map(
+                {'trained': 'trained', 'control': 'trained', 'untrained': 'untrained'}
+        )
+    sel_data = data.query('stage=="test"').groupby(
+                    by=['sub_id', 'group', 'block_type'])['r'].mean().reset_index()
+    viz.violin(ax, data=sel_data, y='r',
+            x='group', order=['trained', 'untrained'],
+            hue='block_type', hue_order=['cons', 'cont', 'conf'],
+            palette=viz.Pal_type, 
+            errorbar='sd',
+            scatter_alpha=.75, 
+            scatter_size=5,
+            err_capsize=.14,
+            mean_marker_size=9,
+            errorlw=2.75,
+            pointdoge=.55)
+    ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
+    ax.set_box_aspect(1.1)
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(['Trained', 'Untrained'])
+    ax.set_ylabel('Accuracy')
+    ax.set_ylim([-.01, 1.05])
+    ax.set_xlabel('')
+
+def learning_curve_exp2(ax, data, with_target_data_set=False):
+    # show the curve
+    data = data.query('group in ["control", "trained"]').copy()
+    data['tps'] = data.apply(
+        lambda x: x['tps']+(x['stage']=="test")*10
+    , axis=1)
+    sel_data = data.groupby(
+        by=['sub_id', 'tps', 'block_type'])['r'].mean().reset_index()
+    if with_target_data_set==False:
+        # visualize
+        sns.lineplot(x='tps', y='r', data=sel_data, 
+                    hue='block_type', hue_order=['cons', 'cont', 'conf'],
+                    err_style='bars', errorbar="se", 
+                    palette=viz.Pal_type,
+                    legend=False,
+                    lw=2.5,
+                    err_kws={'capsize': 3.5, 'elinewidth': 2.5, 'capthick': 2.5},
+                    ax=ax)
+    else:
+        # get target
+        target_data = get_sim_data(with_target_data_set, 'human').query('group in ["control", "trained"]')
+        target_data['tps'] = target_data.apply(
+            lambda x: x['tps']+(x['stage']=="test")*10
+        , axis=1)
+        target_data = target_data.groupby(
+                by=['sub_id', 'tps', 'block_type'])['r'].mean().reset_index()
+        # visualize the model prediction 
+        sns.lineplot(x='tps', y='r', data=sel_data, 
+                    hue='block_type', hue_order=['cons', 'cont', 'conf'],
+                    err_style='band', errorbar="se", 
+                    palette=viz.Pal_type,
+                    err_kws={'alpha':.55}, 
+                    legend=False,
+                    lw=0,
+                    ax=ax)
+        # show the target data 
+        sns.lineplot(x='tps', y='r', data=target_data, 
+                    lw=0,
+                    ax=ax, 
+                    legend=False,
+                    hue='block_type', hue_order=['cons', 'cont', 'conf'],
+                    err_style='bars', errorbar="se", 
+                    palette=viz.Pal_type,
+                    err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
+    ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1)
+    #ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    ax.spines['left'].set_position(('axes',-0.05))
+    ax.set_box_aspect(.5)
+    ax.set_xticks([0, 5, 10, 15])
+    ax.set_xticklabels([1, 6, 11, 16])
+    ax.set_yticks([.5, .6, .7, .8, .9])
+    ax.set_yticklabels([.5, '', .7, '', .9])
+    ax.set_ylabel('Acc.')
+    ax.set_xlabel('#Exposures per stimulus')
+    ax.set_ylim([.45, .9])
+
+def viz_probe(axs, data_set, models, method, goodPoor=None):
+    n = len(models) 
+    for i, m in enumerate(models):
+        if m == 'human':
+            fname = f'{pth}/../data/{data_set}-human.csv'
+            s = 1
+        else:
+            fname = f'{pth}/../simulations/{data_set}/{m}/sim-{method}.csv'
+            s = 10
+        data = pd.read_csv(fname, index_col=0)
+        sel_data = data.query('group=="probe"').reset_index()
+        for j, cond in enumerate(['cons', 'cont', 'conf']):
+            ax = axs[i, j] if n > 1 else axs[j]
+            sdata = sel_data.query(f'block_type=="{cond}"')
+            if goodPoor is not None: sdata = sdata.query(f'goodPoor=="good"') 
+            gdata = sdata.groupby(by=['sub_id', 'a', 'block_type']).count()['r'].reset_index()
+            ptable = gdata.pivot_table(values='r', index='sub_id', columns='a').fillna(0) / (6*s)
+            ptable.columns = [0, 1, 2, 3]
+            ptable = ptable.reset_index()
+            ptable = ptable.melt(id_vars='sub_id', value_vars=[0, 1, 2, 3]
+                        ).rename(columns={'variable': 'a', 'value':'prop'})
+        
+            sns.stripplot(x='a', y='prop', data=ptable, 
+                        color=viz.Pal_type[j], #dodge=True, 
+                        edgecolor='auto', size=2.8,
+                        jitter=True, alpha=.7,
+                        legend=False, zorder=2,
+                        ax=ax)
+            sns.violinplot(x='a', y='prop', data=ptable,
+                        legend=False, alpha=.5, inner=None,
+                        density_norm='width', edgecolor=[.8]*3,
+                        color=viz.Pal_type[j],
+                        ax=ax)
+            sns.barplot(x='a', y='prop', data=ptable,
+                        width=.75, errorbar=('ci', 95), lw=2.5,
+                        edgecolor=viz.Pal_type[j], 
+                        facecolor=viz.Pal_type[j].tolist()+[.2],
+                        err_kws={'color': [.2, .2, .2], 'linewidth': 2.5},
+                        capsize=.2,
+                        color='w', ax=ax)
+            ax.set_box_aspect(.9)
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+            ax.set_ylim([0, 1.1])
+            if j==1: ax.set_title(eval(m).name)
+            ax.spines['left'].set_position(('axes',-0.05))
+            ax.set_xticks(range(4))
+            ax.set_xticklabels([r'$a_1$', r'$a_2$', r'$a_3$', r'$a_4$'])
+
+def get_corr_matrix(data_set, models=['rmPG_fea', 'caPG_fea', 'ecPG_fea'], method='mle', goodPoor=None):
+    p_tables = {}
+    conds = ['cons', 'cont', 'conf']
+    for i, m in enumerate(['human']+models):
+        if m == 'human':
+            fname = f'{pth}/../data/{data_set}-human.csv'
+            s = 1
+        else:
+            fname = f'{pth}/../simulations/{data_set}/{m}/sim-{method}.csv'
+            s = 10
+        data = pd.read_csv(fname, index_col=0)
+        sel_data = data.query('group=="probe"').reset_index()
+        pp = {}
+        for j, cond in enumerate(['cons', 'cont', 'conf']):
+            sdata = sel_data.query(f'block_type=="{cond}"')
+            if goodPoor is not None: sdata = sdata.query(f'goodPoor=="good"') 
+            gdata = sdata.groupby(by=['sub_id', 'a', 'block_type']).count()['r'].reset_index()
+            ptable = gdata.pivot_table(values='r', index='sub_id', columns='a').fillna(0) / (6*s)
+            ptable.columns = [0, 1, 2, 3]
+            ptable = ptable.reset_index()
+            pp[cond] = ptable.sort_values(by='sub_id').loc[:, [0, 1, 2, 3]].values
+        p_tables[m] = pp
+    corr_data = {'corr': [], 'agent':[], 'cond':[]}
+    for i, cond in enumerate(conds):
+        y = p_tables['human'][cond][:, 0::2].reshape([-1])
+        for m in models:
+            x = p_tables[m][cond][:, 0::2].reshape([-1])
+            corr_lm = pg.corr(x, y, method='spearman')
+            #print(corr_lm)
+            r = corr_lm["r"][0]
+            corr_data['corr'].append(r)
+            corr_data['agent'].append(m)
+            corr_data['cond'].append(cond)
+    corr_data = pd.DataFrame.from_dict(corr_data).pivot_table(
+                    values='corr', index='cond', columns='agent'
+                    ).loc[['cons', 'cont', 'conf'], models]
+    return corr_data
+
+def show_corr_mat(corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_fea'], 
+                  font_scale=50,
+                  marker_scale=5500):
+    block_types = ['conf', 'cont', 'cons']
+    fig, ax = plt.subplots(figsize=(1.5*len(models), 4.5))
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
+                        'cool_warm',   [viz.new_blue, viz.lRed*.9, viz.new_red])
+    norm = plt.Normalize(0, .5)
+    f_mean = corr_data.values.mean()*font_scale
+    for i, block_type in enumerate(block_types):
+        for j, model in enumerate(models):
+            color = corr_data.loc[block_type, model]
+            size  = corr_data.loc[block_type, model]*marker_scale
+            ax.scatter(j, i, color=cmap(norm(color)), s=size, marker='s')
+            fs = color*font_scale
+            f_norm = np.sign(fs - f_mean)*np.abs(fs- f_mean)**(2/3) + f_mean
+            ax.text(j-f_norm/65, i-f_norm/200, f'{color:.2f}', fontsize=f_norm)
+
+    ax.set_aspect('equal')
+    ax.set_xticks(np.arange(len(models)), minor=False)
+    ax.set_xticklabels([eval(m).name for m in models])
+    ax.set_yticks(np.arange(len(block_types)), minor=False)
+    ax.set_yticklabels(block_types)
+    ax.set_xlim([-.5, len(models)-.5])
+    ax.set_ylim([-.5, len(block_types)-.5])
+    ax.spines
+    gray = [.2]*3
+    for pos in ['bottom', 'top', 'left', 'right']: 
+        ax.spines[pos].set_color(gray)
+        ax.spines[pos].set_visible(True)
+    for xy in ['x', 'y']: ax.tick_params(axis=xy, colors=gray, which='major')
+    plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, shrink=.75)
+    fig.tight_layout()
+
 
 # -------------- Axuiliary ---------------- #
 
@@ -1005,50 +1342,4 @@ def sim_Probe(exp, agent_name, block_types):
         ax.yaxis.set_tick_params(length=0)
         ax.set_title(f'Policy')
     fig.tight_layout()
-
-def corr_matrix(exp, agents = ['rlPG_fea', 'cascade_fea', 'rdPG_fea'], method='mle', goodPoor=None):
-    p_tables = {}
-    conds = ['cons', 'cont', 'conf']
-    for i, agent in enumerate(['human']+agents):
-        if agent == 'human':
-            fname = f'{pth}/../data/{exp}-human.csv'
-            s = 1
-        else:
-            fname = f'{pth}/../simulations/{exp}/{agent}/sim-{method}.csv'
-            s = 10
-        data = pd.read_csv(fname, index_col=0)
-        sel_data = data.query('group=="probe"').reset_index()
-        pp = {}
-        for j, cond in enumerate(['cons', 'cont', 'conf']):
-            sdata = sel_data.query(f'block_type=="{cond}"')
-            if goodPoor is not None: sdata = sdata.query(f'goodPoor=="good"') 
-            gdata = sdata.groupby(by=['sub_id', 'a', 'block_type']).count()['r'].reset_index()
-            ptable = gdata.pivot_table(values='r', index='sub_id', columns='a').fillna(0) / (6*s)
-            ptable.columns = [0, 1, 2, 3]
-            ptable = ptable.reset_index()
-            pp[cond] = ptable.sort_values(by='sub_id').loc[:, [0, 1, 2, 3]].values
-        p_tables[agent] = pp
-    corr_data = {'corr': [], 'agent':[], 'cond':[]}
-    for i, cond in enumerate(conds):
-        y = p_tables['human'][cond][:, 0::2].reshape([-1])
-        for agent in agents:
-            x = p_tables[agent][cond][:, 0::2].reshape([-1])
-            corr_lm = pg.corr(x, y, method='spearman')
-            #print(corr_lm)
-            r = corr_lm["r"][0]
-            corr_data['corr'].append(r)
-            corr_data['agent'].append(agent)
-            corr_data['cond'].append(cond)
-    corr_data = pd.DataFrame.from_dict(corr_data).pivot_table(
-                    values='corr', index='cond', columns='agent'
-                    ).loc[['cons', 'cont', 'conf'], agents]
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
-    sns.heatmap(corr_data, cmap="coolwarm",  center=.3, vmax=1.2,
-                square=True, annot=True, cbar_kws={"shrink": .5},
-                lw=1, ax=ax)
-    ax.set_xticklabels([eval(agent).name for agent in agents])
-    ax.set_yticklabels(['Consistent', 'Control', 'Conflict'])
-    ax.set_xlabel('')
-    ax.set_ylabel('')
-
 
