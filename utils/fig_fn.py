@@ -175,6 +175,45 @@ def gen_per_model_exp2(ax, data):
     ax.set_ylim([-.01, 1.05])
     ax.set_xlabel('')
 
+def generalize_exp2(axs, data_set, models, method='mle'):
+    data = [] 
+    block_types = ['cons', 'cont', 'conf']
+    for m in models:
+        datum = get_sim_data(data_set, m, method=method)
+        datum['group'] = datum['group'].map({
+                'control': 'trained', 
+                'trained': 'trained',
+                'untrained': 'untrained'
+        })
+        sel_datum = datum.query('stage=="test"').groupby(
+                    by=['sub_id', 'group', 'block_type'])['r'].mean().reset_index()
+        sel_datum['model'] = m
+        data.append(sel_datum)
+    data = pd.concat(data, axis=0)
+    for i, block_type in enumerate(block_types):
+        ax=axs[i]
+        viz.violin(ax, data=data.query(f'block_type=="{block_type}"'), y='r',
+            x='group', order=['trained', 'untrained'],
+            hue='model', hue_order=models,
+            palette=[eval(m).color for m in models], 
+            errorbar='sd',
+            scatter_alpha=.75, 
+            scatter_size=3.5,
+            err_capsize=.15,
+            errorlw=2.75,
+            mean_marker_size=8,
+            pointdoge=.55)
+        ax.spines['left'].set_position(('axes',-0.04))
+        ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
+        ax.set_box_aspect(.95)
+        ax.set_xticks([0, 1])
+        ax.set_yticks([0, .25, .5, .75, 1])
+        ax.set_yticklabels([0.0, '', .5, '', 1.])
+        ax.set_xticklabels(['Trained', 'Untrained'])
+        ax.set_ylabel('Accuracy')
+        ax.set_ylim([-.01, 1.05])
+        ax.set_xlabel('')
+
 def learning_curve_exp2(ax, data, with_target_data_set=False):
     # show the curve
     data = data.query('group in ["control", "trained"]').copy()
@@ -319,13 +358,14 @@ def get_corr_matrix(data_set, models=['rmPG_fea', 'caPG_fea', 'ecPG_fea'], metho
     return corr_data
 
 def show_corr_mat(corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_fea'], 
+                  ub=.5, 
                   font_scale=50,
                   marker_scale=5500):
     block_types = ['conf', 'cont', 'cons']
     fig, ax = plt.subplots(figsize=(1.5*len(models), 4.5))
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
                         'cool_warm',   [viz.new_blue, viz.lRed*.9, viz.new_red])
-    norm = plt.Normalize(0, .5)
+    norm = plt.Normalize(0, ub)
     f_mean = corr_data.values.mean()*font_scale
     for i, block_type in enumerate(block_types):
         for j, model in enumerate(models):

@@ -95,8 +95,11 @@ class wrapper:
         tot_loglike_loss  = -np.sum([self.loglike(params, sub_data[key])
                     for key in sub_data.keys()])
         # negative log prior 
-        tot_logprior_loss = 0 if p_priors==None else \
-            -self.logprior(params, p_priors)
+        if p_priors==None:
+            tot_logprior_loss = 0 
+        else:
+            p_trans = [fn(p) for p, fn in zip(params, self.agent.p_trans)]
+            tot_logprior_loss = -self.logprior(p_trans, p_priors)
         # sum
         return tot_loglike_loss + tot_logprior_loss
 
@@ -114,9 +117,6 @@ class wrapper:
        
         ## loop to simulate the responses in the block 
         for t, row in block_data.iterrows():
-
-            if t>20:
-                pass
 
             # predict stage: obtain input
             ll += env.eval_fn(row, subj)
@@ -330,12 +330,12 @@ class fea_base:
 class rmPG(base_agent):
     name     = 'RMPG'
     p_names  = ['alpha'] 
-    p_bnds   = [(0, 500)]
-    p_pbnds  = [(0, 5)]
+    p_bnds   = [(0, 1000)]
+    p_pbnds  = [(-2, 2)]
     p_poi    = p_names
-    p_priors = [halfnorm(0, 50)]*len(p_names)
-    p_trans  = [lambda x: x]*len(p_names)
-    p_links  = [lambda x: x]*len(p_names)
+    p_priors = [halfnorm(0, 40)]*len(p_names)
+    p_trans  = [lambda x: clip_exp(x)]*len(p_names)
+    p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
     n_params = len(p_names)
     insights = ['pol']
     color    = np.array([200, 200, 200]) / 255
@@ -344,7 +344,6 @@ class rmPG(base_agent):
     alpha    = .8
 
     def load_params(self, params):
-        # from gaussian space to actual space  
         params = [f(p) for f, p in zip(self.p_trans, params)]
         self.alpha_pi = params[0]
         self.b        = 1/2
@@ -400,12 +399,12 @@ class ecPG_sim(base_agent):
     '''
     name     = 'ECPG'
     p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
-    p_bnds   = [(0, 500)]*len(p_names)
-    p_pbnds  = [(0, 20), (0, 3), (0, 1)]
+    p_bnds   = [(0, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-10, 0)]
     p_poi    = p_names
-    p_priors = [halfnorm(0, 50)]*len(p_names)
-    p_trans  = [lambda x: x]*len(p_names)
-    p_links  = [lambda x: x]*len(p_names)
+    p_priors = [halfnorm(0, 40)]*len(p_names)
+    p_trans  = [lambda x: clip_exp(x)]*len(p_names)
+    p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
     n_params = len(p_names)
     voi      = []
     insights = ['enc', 'dec', 'pol']
@@ -415,7 +414,6 @@ class ecPG_sim(base_agent):
     alpha    = 1
 
     def load_params(self, params):
-        # from gaussian space to actual space  
         params = [f(p) for f, p in zip(self.p_trans, params)]
         self.alpha_psi  = params[0]
         self.alpha_rho  = params[1]
@@ -538,12 +536,12 @@ class ecPG(ecPG_sim):
 class caPG(ecPG):
     name     = 'CAPG'
     p_names  = ['alpha_psi', 'alpha_rho']  
-    p_bnds   = [(0, 500)]*len(p_names)
-    p_pbnds  = [(5, 30), (0, 3)]
+    p_bnds   = [(0, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2.5), (-2, 2.5)]
     p_poi    = p_names
-    p_priors = [halfnorm(0, 50)]*len(p_names)
-    p_trans  = [lambda x: x]*len(p_names)
-    p_links  = [lambda x: x]*len(p_names)
+    p_priors = [halfnorm(0, 40)]*len(p_names)
+    p_trans  = [lambda x: clip_exp(x)]*len(p_names)
+    p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
     n_params = len(p_names)
     voi      = []
     insights = ['enc', 'dec', 'pol']
@@ -553,7 +551,6 @@ class caPG(ecPG):
     alpha    = .8
 
     def load_params(self, params):
-        # from gaussian space to actual space  
         params = [f(p) for f, p in zip(self.p_trans, params)]
         self.alpha_psi  = params[0]
         self.alpha_rho  = params[1]
@@ -588,12 +585,12 @@ class caPG(ecPG):
 class l2PG(ecPG):
     name     = 'L2PG'
     p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
-    p_bnds   = [(0, 500), (0, 500), (0, 500)]
-    p_pbnds  = [(0, 30), (0, 10), (0, 1)]
+    p_bnds   = [(0, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-10, 0)]
     p_poi    = p_names
-    p_priors = [halfnorm(0, 50)]*len(p_names)
-    p_trans  = [lambda x: x]*len(p_bnds)
-    p_links  = [lambda x: x]*len(p_bnds)
+    p_priors = [halfnorm(0, 40)]*len(p_names)
+    p_trans  = [lambda x: clip_exp(x)]*len(p_bnds)
+    p_links  = [lambda x: np.log(x+eps_)]*len(p_bnds)
     poi_raw  = [(.01, 15), (.01, 15), (.01, 2)]     
     n_params = len(p_names)
     voi      = []
