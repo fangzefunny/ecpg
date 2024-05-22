@@ -765,7 +765,7 @@ class LC(base_agent):
     n_params = len(p_names)
     voi = ['last_z']
     insights = ['pol', 'p_Z1S']
-    color    =  np.array([154, 140, 152]) / 255
+    color = np.array([201, 173, 167]) / 255
 
     def __init__(self, env, params):
         super().__init__(env, params)
@@ -803,8 +803,6 @@ class LC(base_agent):
         π(a|st) = softmax(βQ(st,a))
                 = softmax(β\sum_z p(z,st)Q(z,a))
         '''
-        if self.t ==60:
-            pass
         # get the feature of s
         f = self.embed(fstr)
         self.fHistory.append(f.copy())

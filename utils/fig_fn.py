@@ -201,8 +201,7 @@ def generalize_exp2(axs, data_set, models, method='mle'):
             scatter_size=3.5,
             err_capsize=.15,
             errorlw=2.75,
-            mean_marker_size=8,
-            pointdoge=.55)
+            mean_marker_size=8)
         ax.spines['left'].set_position(('axes',-0.04))
         ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
         ax.set_box_aspect(.95)
