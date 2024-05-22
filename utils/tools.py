@@ -12,7 +12,7 @@ def get_sim_data(data_set, model, method='mle'):
         fname = f'../simulations/{data_set}/{model}/sim-{method}.csv'
     return pd.read_csv(fname)
 
-def get_fit_param(data_set, model, method='mle', poi=None, p_trans=False):
+def get_fit_param(data_set, model, method='mle', poi=None):
     fname = f'../fits/{data_set}/fit_sub_info-{model}-{method}.pkl'
     with open(fname, 'rb')as handle: fit_sub_info = pickle.load(handle)
     if poi is None: poi = eval(model).p_names
@@ -28,7 +28,10 @@ def get_fit_param(data_set, model, method='mle', poi=None, p_trans=False):
             params[p].append(fn(pvalue))
     return pd.DataFrame.from_dict(params)
 
-def get_llh_score(data_set, models, method, if_bms=False, relative=True):
+def get_llh_score(data_set, models, method, 
+                  if_bms=False, 
+                  use_bic=False,
+                  relative=True):
     '''Get likelihood socres
 
     Inputs:
@@ -57,7 +60,7 @@ def get_llh_score(data_set, models, method, if_bms=False, relative=True):
             'H': h,
         })
     # get bms 
-    if if_bms: bms_results = fit_bms(fit_sub_info, use_bic=False)
+    if if_bms: bms_results = fit_bms(fit_sub_info, use_bic=use_bic)
 
     ## combine into a dataframe 
     cols = ['NLL', 'AIC', 'BIC', 'model', 'sub_id']

@@ -197,6 +197,7 @@ class exp2_task(exp1_task):
             r2: color
             r3: appendage
         '''
+        s = int(s)
         if self.block_type== 'cont':
             f = '304' if s==4 else ''.join([f'{s}']*3) 
 

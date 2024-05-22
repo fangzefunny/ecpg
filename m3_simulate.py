@@ -11,11 +11,11 @@ from utils.env_fn import *
 
 ## pass the hyperparams
 parser = argparse.ArgumentParser(description='Test for argparse')
-parser.add_argument('--agent_name', '-n', help='choose agent', default='ecPG')
+parser.add_argument('--agent_name', '-n', help='choose agent', default='ecPG_fea')
 parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='map')
 parser.add_argument('--cross_valid','-v', help='is corss validated', type = bool, default=False)
 parser.add_argument('--algorithm',  '-a', help='fitting algorithm', type = str, default='BFGS')
-parser.add_argument('--data_set',   '-d', help='choose data set', default='exp1-cross_train')
+parser.add_argument('--data_set',   '-d', help='choose data set', default='exp2')
 parser.add_argument('--n_sim',      '-f', help='f simulations', type=int, default=1)
 parser.add_argument('--seed',       '-s', help='random seed', type=int, default=120)
 parser.add_argument('--n_cores',    '-c', help='number of CPU cores used for parallel computing', 

@@ -7,6 +7,7 @@ from functools import partial
 from scipy.special import softmax, psi, gammaln
 from scipy.stats import gamma, norm 
 from scipy.optimize import minimize
+from pybads.bads import BADS
 
 eps_ = 1e-13
 max_ = 1e+13
@@ -173,17 +174,33 @@ def fit(loss_fn, data, bnds, pbnds, p_name, p_priors,
                     
     ## Fit the params 
     if verbose: print('init with params: ', param0) 
-    result = minimize(loss_fn, param0, args=(data, p_priors), 
-                      bounds=bnds, method=alg,
-                      options={'disp': verbose})
-    if verbose: print(f'''  Fitted params: {result.x}, 
-                Loss: {result.fun}''')
+    if alg=='bads':
+        def loss_fn_bads(x): 
+            return loss_fn(x, data, p_priors)
+        lb  = np.array([bnd[0] for bnd in bnds])
+        ub  = np.array([bnd[1] for bnd in bnds])
+        plb = np.array([pbnd[0] for pbnd in pbnds])
+        pub = np.array([pbnd[1] for pbnd in pbnds])
+        bads = BADS(loss_fn_bads, param0, lb, ub, plb, pub, 
+                    options={"display" : 'off'})
+        result = bads.optimize()
+        x_min = result['x']
+        f_min = result['fval']
+
+    else:
+        result = minimize(loss_fn, param0, args=(data, p_priors), 
+                    bounds=bnds, method=alg,
+                    options={'disp': verbose})
+        x_min = result.x
+        f_min = result.fun
+    if verbose: print(f'''  Fitted params: {x_min}, 
+                                Loss: {f_min}''')
             
     ## Save the optimize results 
     fit_res = {}
-    fit_res['log_post']   = -result.fun
-    fit_res['log_like']   = -loss_fn(result.x, data, None)
-    fit_res['param']      = result.x
+    fit_res['log_post']   = -f_min
+    fit_res['log_like']   = -loss_fn(x_min, data, None)
+    fit_res['param']      = x_min
     fit_res['param_name'] = p_name
     fit_res['n_param']    = n_params
     fit_res['aic']        = n_params*2 - 2*fit_res['log_like']
@@ -191,9 +208,6 @@ def fit(loss_fn, data, bnds, pbnds, p_name, p_priors,
     if alg == 'BFGS':
         fit_res['H'] = np.linalg.pinv(result.hess_inv)
         fit_res['H_inv'] = result.hess_inv
-    elif alg == 'L-BFPG-B':
-        fit_res['H'] = np.linalg.pinv(result.hess_inv.todense())
-        fit_res['H_inv'] = result.hess_inv.todense()
 
     return fit_res
 
@@ -245,11 +259,15 @@ def fit_parallel(pool, loss_fn, data, bnds, pbnds, p_name,
                           verbose)
                     ) for i in range(n_fits)]
     opt_val   = np.inf 
+    losses, tol = [], 1e-2,
     for p in results:
         res = p.get()
+        losses.append(-res['log_post'])
         if -res['log_post'] < opt_val:
             opt_val = -res['log_post']
             opt_res = res
+    n_low = (np.abs(np.array(losses)-opt_val)<tol).sum()
+    print(f'\tNum of lowest loss: {n_low}/{len(losses)}')
             
     return opt_res 
 

@@ -6,7 +6,7 @@ from copy import deepcopy
 
 from functools import lru_cache
 from scipy.special import softmax 
-from scipy.stats import halfnorm
+from scipy.stats import halfnorm, uniform
 
 from utils.fit import *
 from utils.env_fn import *
@@ -399,8 +399,8 @@ class ecPG_sim(base_agent):
     '''
     name     = 'ECPG'
     p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
-    p_bnds   = [(0, 1000)]*len(p_names)
-    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-10, 0)]
+    p_bnds   = [(-1000, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 3), (-2, 3), (-6, 1.5)]
     p_poi    = p_names
     p_priors = [halfnorm(0, 40)]*len(p_names)
     p_trans  = [lambda x: clip_exp(x)]*len(p_names)
@@ -410,7 +410,7 @@ class ecPG_sim(base_agent):
     insights = ['enc', 'dec', 'pol']
     color    = viz.Red
     marker   = '^'
-    size     = 65
+    size     = 125
     alpha    = 1
 
     def load_params(self, params):
@@ -536,7 +536,7 @@ class ecPG(ecPG_sim):
 class caPG(ecPG):
     name     = 'CAPG'
     p_names  = ['alpha_psi', 'alpha_rho']  
-    p_bnds   = [(0, 1000)]*len(p_names)
+    p_bnds   = [(-1000, 1000)]*len(p_names)
     p_pbnds  = [(-2, 2.5), (-2, 2.5)]
     p_poi    = p_names
     p_priors = [halfnorm(0, 40)]*len(p_names)
@@ -585,8 +585,8 @@ class caPG(ecPG):
 class l2PG(ecPG):
     name     = 'L2PG'
     p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
-    p_bnds   = [(0, 1000)]*len(p_names)
-    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-10, 0)]
+    p_bnds   = [(-1000, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-10, 1)]
     p_poi    = p_names
     p_priors = [halfnorm(0, 40)]*len(p_names)
     p_trans  = [lambda x: clip_exp(x)]*len(p_bnds)
@@ -595,6 +595,9 @@ class l2PG(ecPG):
     n_params = len(p_names)
     voi      = []
     insights = ['encoder', 'decoder', 'policy', 'attn', 'theta']
+    marker   = 'o'
+    size     = 30
+    alpha    = .8
     color    = viz.Green
 
     def _learn_pZ(self):
@@ -613,7 +616,7 @@ class l2PG(ecPG):
         u = np.array([r - self.b])[:, np.newaxis] 
         
         # backward
-        l2_loss = self.theta/np.sqrt(np.square(self.theta).sum())
+        l2_loss = self.theta/np.sqrt(np.square(self.theta+eps_).sum())
         sTheta = (u*p_a1Z.T)/(self.lmbda+eps_)
         gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
                     sTheta - p_Z1s@sTheta.T)) + l2_loss
@@ -655,7 +658,7 @@ class l1PG(l2PG):
 #      Feature-based models     #
 # ------------------------------# 
 
-class rmPG_fea(fea_base, rmPG):
+class rmPG_fea(rmPG):
     name     = 'fRMPG'
     voi      = []
     insights = ['pol']
@@ -663,7 +666,9 @@ class rmPG_fea(fea_base, rmPG):
     def _init_agent(self):
         self.phi    = np.zeros([self.nI, self.nA]) 
 
-class ecPG_fea_sim(fea_base, ecPG_sim):
+    def get_pol(self): fea_base.get_pol(self)
+
+class ecPG_fea_sim(ecPG_sim):
     '''Feature efficient coding policy gradient (analytical)
     '''
     name     = 'fECPG'
@@ -705,225 +710,36 @@ class ecPG_fea_sim(fea_base, ecPG_sim):
             attn[d] = attn_d
 
         return attn
+    
+    def get_pol(self): return fea_base.get_pol(self)
 
 class ecPG_fea(ecPG_fea_sim):
     '''Feature efficient coding policy gradient (fitting)
     '''
-    def _learn_enc_dec(self):
-        # get data 
-        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
-       
-        # prediction 
-        f     = self.embed(fstr)
-        p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a_ava)
-        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
-        p_a1Z = p_A1Z[:, [a]]
-        u = np.array([r - self.b])[:, np.newaxis] 
-        
-        # backward
-        log_dif = np.log(p_Z1s+eps_)-np.log(self.p_Z.T+eps_)  
-        sTheta = (u*p_a1Z.T/(self.lmbda+eps_) - log_dif)
-        gTheta  = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
-                    sTheta - p_Z1s@sTheta.T))
-       
-        sPhi = u*p_Z1s.T
-        gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
-
-        self.theta -= self.alpha_psi * gTheta
-        self.phi   -= self.alpha_rho * gPhi
-
+    def _learn_enc_dec(self): ecPG._learn_enc_dec(self)
+              
 class caPG_fea(caPG):
     name     = 'fCAPG'
 
-    def _init_agent(self):
-        self.nZ = self.nS
-        fname = f'{pth}/../data/exp2_ecpg_weight.pkl'
-        with open(fname, 'rb')as handle: theta_dict = pickle.load(handle)
-        self.theta = deepcopy(theta_dict[self.env.block_type])
-        self.phi   = np.zeros([self.nZ, self.nA]) 
-    
-    def get_attn(self):
-        '''Perturbation-based attention
-        '''
-        attn = np.zeros([3])
-        for d in range(3): 
-            attn_d = 0 
-            for s in range(self.nS):
-                f_orig = self.embed(s)
-                pi_orig = softmax(f_orig@self.theta, axis=1)
-                nD = f_orig.reshape([3, -1]).shape[1]
-                pi_pert = [] 
-                for i in range(nD):
-                    f_pert = f_orig.reshape([3, -1]).copy()
-                    f_pert[d, :] = np.eye(nD)[i, :]
-                    f_pert = f_pert.reshape([1, -1])
-                    pi_pert.append(softmax(f_pert@self.theta, axis=1).reshape([-1]))
-                pi_pert = np.vstack(pi_pert)
-                # kld for each stimuli 
-                attn_d += (pi_orig* (np.log(pi_orig+eps_) - 
-                                     np.log(pi_pert+eps_))).sum(1).mean()
-            attn[d] = attn_d
-
-        return attn
+    def _init_agent(self): ecPG_fea_sim._init_agent(self)
+     
+    def get_attn(self): return ecPG_fea_sim.get_attn(self)
 
 class l2PG_fea(l2PG):
     name     = 'fL2PG'
 
-    def _init_agent(self):
-        self.nZ = self.nS
-        fname = f'{pth}/../data/exp2_ecpg_weight.pkl'
-        with open(fname, 'rb')as handle: theta_dict = pickle.load(handle)
-        self.theta = deepcopy(theta_dict[self.env.block_type])
-        self.phi   = np.zeros([self.nZ, self.nA]) 
-    
-    def get_attn(self):
-        '''Perturbation-based attention
-        '''
-        attn = np.zeros([3])
-        for d in range(3): 
-            attn_d = 0 
-            for s in range(self.nS):
-                f_orig = self.embed(s)
-                pi_orig = softmax(f_orig@self.theta, axis=1)
-                nD = f_orig.reshape([3, -1]).shape[1]
-                pi_pert = [] 
-                for i in range(nD):
-                    f_pert = f_orig.reshape([3, -1]).copy()
-                    f_pert[d, :] = np.eye(nD)[i, :]
-                    f_pert = f_pert.reshape([1, -1])
-                    pi_pert.append(softmax(f_pert@self.theta, axis=1).reshape([-1]))
-                pi_pert = np.vstack(pi_pert)
-                # kld for each stimuli 
-                attn_d += (pi_orig* (np.log(pi_orig+eps_) - 
-                                     np.log(pi_pert+eps_))).sum(1).mean()
-            attn[d] = attn_d
+    def _init_agent(self): ecPG_fea_sim._init_agent(self)
+     
+    def get_attn(self): return ecPG_fea_sim.get_attn(self)
 
-        return attn
-    
 class l1PG_fea(l2PG_fea):
-    name     = 'L1PG'
+    name     = 'fL1PG'
 
-    def _learn_enc_dec(self):
-        # get data 
-        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
-       
-        # prediction 
-        f     = self.embed(fstr)
-        p_Z1s = softmax(f@self.theta, axis=1)
-        m_A   = mask_fn(self.nA, a_ava)
-        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
-        p_a1Z = p_A1Z[:, [a]]
-        u = np.array([r - self.b])[:, np.newaxis] 
-        
-        # backward
-        l1_loss = np.sign(self.theta)
-        sTheta = (u*p_a1Z.T)/(self.lmbda+eps_)
-        gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
-                    sTheta - p_Z1s@sTheta.T)) + l1_loss
-       
-        sPhi = u*p_Z1s.T
-        gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
+    def _learn_enc_dec(self): l1PG._learn_enc_dec(self)
 
-        self.theta -= self.alpha_psi * gTheta
-        self.phi   -= self.alpha_rho * gPhi
-    
 # ----------------------------------------#
 #      Representation learning models     #
 # ----------------------------------------# 
-
-class ACL(base_agent):
-    '''ACL model with value attention
-
-    Adapted from: 
-        Leong, Y. C., Radulescu, A., Daniel, R., DeWoskin, V., & Niv, Y. (2017). 
-        Dynamic interaction between reinforcement learning and attention in 
-        multidimensional environments. Neuron, 93(2), 451-463.
-    '''
-    name     = 'ACL'
-    p_bnds   = [(np.log(eps_), np.log(50)), 
-                (np.log(eps_), np.log(50)),
-                (np.log(eps_), np.log(50)),
-                (np.log(eps_), np.log(50))]
-    p_pbnds  = [(-3, 3), (-1, 3), (-3, 3), (-3, 3)]
-    p_names  = ['η', 'β', 'ε', 'η_a']
-    p_print  = ['eta', 'beta', 'epsilon', 'eta_a']
-    p_poi    = p_names
-    p_priors = []
-    p_trans  = [lambda x: 1/(1+clip_exp(-x)),
-                lambda x: clip_exp(x),
-                lambda x: 1/(1+clip_exp(-x)),
-                lambda x: 1/(1+clip_exp(-x))]
-    p_links  = [lambda x: np.log(x+eps_)-np.log(1-x),
-                lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_)-np.log(1-x),
-                lambda x: np.log(x+eps_)-np.log(1-x)]
-    n_params = len(p_names)
-    voi = []
-    insights = ['pol', 'attn']
-    color = np.array([201, 173, 167]) / 255
-
-    def __init__(self, env, params):
-        super().__init__(env, params)
-        
-    def load_params(self, params):
-        # from gaussian space to actual space  
-        params = [f(p) for f, p in zip(self.p_trans, params)]
-        self.eta   = params[0] # the value learning rate
-        self.beta  = params[1] # the inverse temperature
-        self.eps   = params[2] # the decay rate
-        self.eta_a = params[3] # the learning rate of attention 
-
-    def _init_Critic(self):
-        self.q_SA = np.zeros([self.nF, self.nA]) / (self.nA*self.nD)
-        self.q_sA = np.ones([self.nA,]) / self.nA
-
-    def _init_Dists(self):
-        self.w   = np.ones([self.nD,]) / self.nD
-        self.phi = np.ones([self.nF, 1]) / self.nD
-
-    def policy(self, s, **kwargs):
-        '''the forward function'''
-        # normalize the weight
-        m_A  = mask_fn(self.nA, kwargs['a_ava1'], kwargs['a_ava2'])
-        # get the weighted value 
-        f = self.embed(s)
-        self.q_sA = (self.phi.T*f)@self.q_SA
-        p_A1s = softmax(self.beta*self.q_sA - (1-m_A)*max_, axis=1)
-        return p_A1s.reshape([-1]) 
-
-    def _init_embed(self):
-        self.embed = self.env.embed 
-
-    def learn(self):
-        self._learn_critic()
-        self._learn_attn()
-        
-    def _learn_critic(self):
-        # get data 
-        s, a, r = self.mem.sample('s', 'a', 'r')
-        # embeding, prediction error
-        f = self.embed(s).reshape([-1])
-        delta = r - self.q_sA[0, a]
-        # for the chosen feature & action  
-        q_selected = self.q_SA[f>0, a] + self.eta*self.w*delta
-        # for the unchosen feature & action
-        self.q_SA += self.eps*(0 - self.q_SA) 
-        # update q table 
-        self.q_SA[f>0, a] = q_selected
-
-    def _learn_attn(self):
-        # the maximum value in each dimension was
-        # then passed through a softmax function
-        # to obtain the attention vector 
-        v = self.q_SA.max(1)
-        tar_w = softmax(v.reshape([self.nD, -1]).max(axis=-1))
-        self.w += self.eta_a*(tar_w - self.w)
-        # broadcast to each features 
-        self.phi = np.repeat(self.w, int(self.nF/self.nD))
-    
-    def get_attn(self):
-        return self.w.copy()
           
 class LC(base_agent):
     '''Latenc cause model
@@ -936,23 +752,16 @@ class LC(base_agent):
     it cannot generalize at all in the exp2 control case. 
     '''
     name     = 'LC'
-    p_bnds   = [(np.log(eps_), np.log(50)), 
-                (np.log(eps_), np.log(50)),
-                (np.log(eps_), np.log(50)),
-                (-50, 50),]
-    p_pbnds  = [(-2, 2), (-1, 2), (-1, 2), (-2, 2)]
-    p_names  = ['η', 'α', 'β', 'w']
-    p_print  = ['eta', 'alpha', 'beta', 'w']
-    p_poi    = ['η', 'α', 'β']
+    p_names  = ['eta', 'alpha', 'beta']
+    p_bnds   = [(-1000, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2), (-1, 2), (-1, 2)]
     p_priors = []
     p_trans  = [lambda x: 1/(1+clip_exp(-x)),
                 lambda x: clip_exp(x),
-                lambda x: clip_exp(x),
-                lambda x: x,]
+                lambda x: clip_exp(x)]
     p_links  = [lambda x: np.log(x+eps_)-np.log(1-x),
                 lambda x: np.log(x+eps_),
-                lambda x: np.log(x+eps_),
-                lambda x: x]
+                lambda x: np.log(x+eps_)]
     n_params = len(p_names)
     voi = ['last_z']
     insights = ['pol', 'p_Z1S']
@@ -964,122 +773,296 @@ class LC(base_agent):
     def load_params(self, params):
         # from gaussian space to actual space  
         params = [f(p) for f, p in zip(LC.p_trans, params)]
-        self.eta   = params[0] # the learning rate of value
-        self.alpha = params[1] # the concentration of prior 
-        self.beta  = params[2] # the inverse temperature
-        self.w0    = params[3] # the initial w
+        self.eta    = params[0] # the learning rate of value
+        self.alpha  = params[1] # the concentration of prior 
+        self.beta   = params[2] # the inverse temperature
+        self.p      = .1 #params[3]
         self.tau   = 1         # the time scale parameters for CRP
         self.max_iter = 10     # maximum iteration for EM
          
-    def _init_embed(self):
-        self.embed = self.env.embed 
+    def _init_agent(self):
+        self.nZ, self.t = 0, 0
+        self.z = 0
+        self.ZHistory = [] 
+        self.fHistory = []
+        self.p_f1Z = 1
+        self.W_ZA = np.ones([1, self.nA])/self.nA
+        self._learn_p_Z()
 
-    def _init_Critic(self):
-        self.W_ZSA = np.zeros([1, 1, self.nA])+self.w0
+    def _learn_p_Z(self):
+        # update prior 
+        cat_zH = np.eye(self.nZ+1)[self.ZHistory]
+        t = len(self.ZHistory)
+        tH = np.arange(t) 
+        f_z1zH = ((((1/(t-tH))**self.tau)).reshape([1, -1])@cat_zH).reshape([-1])
+        f_z1zH[self.nZ] = self.alpha
+        self.p_Z = f_z1zH.reshape([-1, 1]) / f_z1zH.sum()
 
-    def _init_Dists(self):
-        self.z   = 0
-        self.zH  = []
-        self.nZ  = 0
-        self.cat_zH = np.eye(self.nZ+1)[self.zH]
-        self.p_Z = 1
-        self.p_Z1sar = np.array([1])
-        self.p_S1Z  = 1
-        # the parameter for categorical distribution
-        self.fH  = []
-        self.t = 0
-
-    def policy(self, s, **kwargs):
-        '''the forward function'''
-        # update deceide the class for previous stimulus 
-        if self.t>0: self.class_policy()
+    def policy(self, fstr, **kwargs):
+        '''the forward function
+        π(a|st) = softmax(βQ(st,a))
+                = softmax(β\sum_z p(z,st)Q(z,a))
+        '''
+        if self.t ==60:
+            pass
         # get the feature of s
-        f = self.embed(s)
-        self.fH.append(f.copy())
+        f = self.embed(fstr)
+        self.fHistory.append(f.copy())
         # get p(s=f|Z) => p(s|Z): nZxnF @ nFx1 = nZx1
-        self.p_s1Z = (self.p_S1Z * f.reshape([1, self.nD, -1])
-                      ).sum(2).prod(1, keepdims=True)
-        # get p(r=1|s, Z, A) = Q(Z, s, A): nZxnA 
-        q_ZsA = (f[:, :, np.newaxis]*self.W_ZSA).sum(1)
+        p_s1f = f.reshape([1, self.nD, -1])
+        self.p_s1Z = (self.p_f1Z*p_s1f).sum(2).prod(1, keepdims=True)
+        # get p(r=1|Z, A) = Q(Z, A): nZxnA 
+        p_r1ZA = self.W_ZA
         # p(r=1|s, A) = \sum_z p(r=1, Z|s, A)
         #             ∝ \sum_z p(r=1, Z, s|A)
-        #             = \sum_z p(Z)p(s|Z)p(r=1|Z, s, A)
+        #             = \sum_z p(Z)p(s|Z)p(r=1|Z, A)
+        #             = \sum_z p(Z, s)p(r=1|Z, A)
         # nZx1 * nZx1 * nZxnA = nZ*nA
         f_Zs = (self.p_Z*self.p_s1Z)
         self.p_Zs = f_Zs / f_Zs.sum()
-        q_sA = (self.p_Zs*q_ZsA).sum(0)
+        Q_sA = (self.p_Zs*p_r1ZA).sum(0)
         # add mask
-        m_A  = mask_fn(self.nA, kwargs['a_ava1'], kwargs['a_ava2'])
-        # p(a|fs) = softmax(βQ(a|fs))
-        logit = self.beta*q_sA - (1-m_A)*max_
+        m_A  = mask_fn(self.nA, kwargs['a_ava'])
+        # p(a|s) = softmax(βp(r=1|s, A))
+        logit = self.beta*Q_sA - (1-m_A)*max_
         self.t += 1
         return softmax(logit.reshape([-1]))
-    
-    def class_policy(self):
-        '''class policy + update prior 
-            p(Z|Z_{1:t-1})
-        '''
-        # assign latent cluster 
-        self.z = np.argmax(self.p_Zs.reshape([-1]))
-        self.zH.append(self.z)
-        # if a new cluster is selected 
-        if self.z==self.nZ: 
-            self.nZ += 1
-            new_w = np.zeros([1, 1, self.nA])+self.w0
-            self.W_ZSA = np.vstack([self.W_ZSA, new_w])
-        # update prior 
-        self.cat_zH = np.eye(self.nZ+1)[self.zH]
-        t = len(self.zH)
-        tH = np.arange(t) 
-        f_z1zH = ((((1/(t-tH))**self.tau)).reshape([1, -1])@self.cat_zH).reshape([-1])
-        f_z1zH[self.nZ] = self.alpha
-        self.p_Z = f_z1zH.reshape([-1, 1]) / f_z1zH.sum()
-        # update likelihood
-        # get p(S|Z): nTxnZ.T @ nTxnF = nZxnF
-        f_S1Z = (self.cat_zH.T@np.vstack(self.fH)
-            ).reshape([-1, self.nD, int(self.nF/self.nD)]) + .1
-        self.p_S1Z = f_S1Z / f_S1Z.sum(2, keepdims=True) 
-        assert (np.abs(self.p_S1Z.sum(axis=(1,2))-3)<1e-5).all(), 'p(S|Z) does not sum to 3'
-        
+            
     def learn(self):
-        self._learn_critic()
+        self._learn_Q_ZA()
+        self._learn_p_f1Z()
+        self._learn_p_Z()
 
-    def _learn_critic(self):
-        '''Update using EM algorithm
-        '''
+    def _learn_p_f1Z(self):
+        cat_zH = np.eye(self.nZ+1)[self.ZHistory]
+        f_f1Z = (cat_zH.T@np.vstack(self.fHistory)
+            ).reshape([-1, self.nD, self.nF])+self.p
+        self.p_f1Z = f_f1Z / f_f1Z.sum(2, keepdims=True) 
+        assert (np.abs(self.p_f1Z.sum(axis=(1,2))-3)<1e-5).all(), 'p(f|Z) does not sum to 3'
+
+    def _learn_Q_ZA(self):
         # get data 
-        s, a, r = self.mem.sample('s', 'a', 'r')
+        a, r = self.mem.sample('a', 'r')
         # get feature
-        f = self.embed(s)
         # nZx1 
         old_w = 0 
         for _ in range(self.max_iter):
-            # E-step: p(z|s, a, r) = p(Z, s)p(Q|Z,s,a)p(r|Q)
-            # p(r=1 |Z, s, a) = Q(Z, s, a): nZ,
-            q_Zsa = (f[:, :, np.newaxis]*self.W_ZSA).sum(1)[:, a]
-            # p(r|Z, s, a) = Q**(r)*Q**(1-r)
-            p_r1Zsa = q_Zsa**r*(1-q_Zsa)**(1-r)
+            # E-step: p(z|s, a, r) = p(Z,s)p(r|Z,a)
+            #                      = p(Z,s)p(Q|Z,a)p(r|Q)
+            # p(Q|Z,a) = Q(Z,a): nZ,
+            q_Za = self.W_ZA[:, a]
+            # p(r|Z, a) = p(Q|Z,a)p(r|Q) = Q**(r)*Q**(1-r)
+            p_r1Za = q_Za**r*(1-q_Za)**(1-r)
             # p(Z|s, a, r) ∝ p(Z, s, r| a)
-            #              = p(Z, s)p(r|Z, s, a)
-            # nZ, 
-            f_Z1sar = self.p_Zs.reshape([-1])*p_r1Zsa
+            #              = p(Z, s)p(r|Z, a)
+            f_Z1sar = self.p_Zs.reshape([-1])*p_r1Za
             p_Z1sar = f_Z1sar / f_Z1sar.sum()
-            # M-step: W = W + ηfδ
-            # δ = p(z|fs, a, r)*(r - Q(a|fs, Z)): nZ,
-            delta = p_Z1sar*(r - q_Zsa)
-            # W_ZFa = W_ZFa + η*f*δ
-            self.W_ZSA[:, :, a] += self.eta*delta.reshape([-1, 1])
+            # M-step: W = W + ηδ
+            # δ = p(z|fs, a, r)*(r - Q(s,a)): nZ,
+            delta = p_Z1sar*(r - q_Za)
+            # W_Za = W_Za + η*f*δ
+            self.W_ZA[:, a] += self.eta*delta.reshape([-1])
             # check covergence
-            if np.abs((self.W_ZSA - old_w).sum()) < 1e-5: break
+            if np.abs((self.W_ZA - old_w).sum()) < 1e-5: break
             # cache the old W
-            old_w = self.W_ZSA.copy() 
+            old_w = self.W_ZA.copy() 
         
-        # get posterior 
-        self.p_Zs = p_Z1sar
+        # pick a z given posterior 
+        self.latent_cause_policy(p_Z1sar)
+
+    def latent_cause_policy(self, p_Zs):
+        '''latent cause policy + update prior 
+            p(Z|Z_{1:t-1})
+        '''
+        # pick the maximumize cluster
+        self.z = np.argmax(p_Zs)
+        self.ZHistory.append(self.z)
+        # if a new cluster is selected, init
+        # new set of policy
+        if self.z==self.nZ: 
+            new_w = np.ones([1, self.nA])/self.nA
+            self.W_ZA = np.vstack([self.W_ZA, new_w])
+            self.nZ += 1
 
     def get_last_z(self):
         return self.z
             
     def get_p_Z1S(self):
-        f_SZ = self.p_S1Z*self.p_Z
-        return f_SZ / f_SZ.sum(1)
+        F = self.F.reshape([-1, self.nD, self.nF])
+        p_S1Z = np.zeros([self.nZ+1, F.shape[0]])
+        for i in range(F.shape[0]):
+            p_s1Z = (self.p_f1Z*F[[i]]).sum(2).prod(1)
+            p_S1Z[:, i] = p_s1Z 
+        f_SZ = p_S1Z*self.p_Z
+        return f_SZ / f_SZ.sum(1, keepdims=True)
+
+class MA(base_agent):
+    '''Memory association model
+
+    Created based on reviewers' comments
+    '''
+    name     = 'MA'
+    p_names  = ['alpha_Q', 'alpha_assoc', 'beta_assoc', 'beta']
+    p_bnds   = [(0, np.log(1000))]*len(p_names)
+    p_pbnds  = [(-3, 3), (-3, 3), (-3, 10), (-3, 10)]    
+    p_priors = [uniform(0, 1), uniform(0, 1),
+                halfnorm(0, 40), halfnorm(0, 40)]
+    p_trans  = [lambda x: 1/(1+clip_exp(-x))]*2 +\
+                [lambda x: clip_exp(x)]*2
+    p_links  = [lambda x: np.log(x+eps_)-np.log(1-x+eps_)]*2+\
+                [lambda x: np.log(x+eps_)]*2
+    n_params = len(p_names)
+    voi = []
+    insights = ['pol', 'attn']
+    color = np.array([201, 173, 167]) / 255
+     
+    def load_params(self, params):
+        # from gaussian space to actual space  
+        params = [f(p) for f, p in zip(self.p_trans, params)]
+        self.alpha_Q     = params[0] # the value learning rate
+        self.alpha_assoc = params[1] # the association learning rate
+        self.beta_assoc  = params[2] # the association inverse temperature
+        self.beta        = params[3] # the policy inverse temperature
+
+    def _init_agent(self):
+        self.q_FA    = np.zeros([self.nI, self.nA])  # the feature-action value 
+        self.w_assoc = np.eye(self.nS+self.nProbe) # the association matrix
+        self.T       = [] # memory about the trained pairs
+        self.T_table = np.zeros([self.nS+self.nProbe, self.nA]) 
+    
+    def policy(self, fstr, **kwargs):
+        f = self.embed(fstr)
+        s = int(kwargs['s'])
+        config = tuple([s]+kwargs['a_ava'])
+        if config in self.T: # if trained
+            q_hat = f@self.q_FA 
+        else: # if untrained
+            stimuli = list(range(self.nS+self.nProbe))
+            phi = softmax([self.beta_assoc*self.w_assoc[s, i] 
+                            for i in stimuli]).reshape([-1, 1])
+            q   = np.vstack([self.embed(self.s2f(i))@self.q_FA 
+                            for i in stimuli])
+            q_hat = np.sum(phi*q, axis=0, keepdims=True)
+        m_A = mask_fn(self.nA, kwargs['a_ava'])
+        pi = softmax(self.beta*q_hat - (1-m_A)*max_, axis=1)
+        return pi.reshape([-1]) 
+
+    def learn(self):
+        self._learn_value()
+        self._learn_assoc()
+        self._learn_train_table()
+
+    def _learn_value(self):
+        fstr, a, r = self.mem.sample('f', 'a', 'r')
+        f = self.embed(fstr)
+        q_hat = f@self.q_FA
+        rpe = r - q_hat[0, a]
+        # for the chosen feature & action
+        f = f.reshape([-1]) 
+        q_selected = self.q_FA[f>0, a] + self.alpha_Q*rpe
+        # update q table 
+        self.q_FA[f>0, a] = q_selected
+
+    def _learn_assoc(self):
+        k = self.F@self.F.T
+        q_SA = (self.F@self.q_FA)*self.T_table
+        w_tar = q_SA@q_SA.T 
+        for s in range(self.nS+self.nProbe): w_tar[s, s] = 1
+        self.w_assoc += self.alpha_assoc*(1+k)*(w_tar - self.w_assoc)
+
+    def _learn_train_table(self):
+        s, a_ava = self.mem.sample('s', 'a_ava')
+        config = tuple([int(s)]+a_ava)
+        self.T.append(config)
+        self.T_table[int(s), a_ava] = 1
+
+class ACL(base_agent):
+    '''ACL model with value attention
+
+    Adapted from: 
+        Leong, Y. C., Radulescu, A., Daniel, R., DeWoskin, V., & Niv, Y. (2017). 
+        Dynamic interaction between reinforcement learning and attention in 
+        multidimensional environments. Neuron, 93(2), 451-463.
+    '''
+    name     = 'ACL'
+    p_names  = ['eta', 'beta', 'eta_attn', 'epsilon', 'beta_attn']
+    p_bnds   = [(-1000, 1000)]*len(p_names)
+    p_pbnds  = [(-3, 3), (-3, 10), (-3, 3), (-3, 3), (-3, 10)]    
+    p_priors = [uniform(0, 1), halfnorm(0, 40), 
+                uniform(0, 1), uniform(0, 1), halfnorm(0, 40)]
+    p_trans  = [lambda x: 1/(1+clip_exp(-x)),
+                lambda x: clip_exp(x),
+                lambda x: 1/(1+clip_exp(-x)),
+                lambda x: 1/(1+clip_exp(-x)),
+                lambda x: clip_exp(x),]
+    p_links  = [lambda x: np.log(x+eps_)-np.log(1-x+eps_),
+                lambda x: np.log(x+eps_),
+                lambda x: np.log(x+eps_)-np.log(1-x+eps_),
+                lambda x: np.log(x+eps_)-np.log(1-x+eps_),
+                lambda x: np.log(x+eps_),]
+    n_params = len(p_names)
+    voi = []
+    insights = ['pol', 'attn']
+    color = np.array([201, 173, 167]) / 255
+        
+    def load_params(self, params):
+        # from gaussian space to actual space  
+        params = [f(p) for f, p in zip(self.p_trans, params)]
+        self.eta       = params[0] # the value learning rate
+        self.beta      = params[1] # the inverse temperature
+        self.eta_attn  = params[2] # the learning rate of attention Q
+        self.eps       = params[3] # the decay rate of attention Q
+        self.beta_attn = params[4] # the inverse temperature of attention Q
+
+    def _init_agent(self):
+        self.q_choice = np.zeros([self.nI, self.nA]) # the Q for the choice model 
+        self.q_attn   = np.zeros([self.nI, self.nA]) # the Q for the attn model
+
+    def get_phi(self):
+        # the maximum feature value in each dimension 
+        # was then passed through a softmax function to 
+        # obtain the predicted attention vector
+        v = self.q_attn.max(1) 
+        xi = (v.reshape([self.nD, self.nF])).max(1) 
+        return softmax(self.beta_attn*xi).reshape([-1, 1])
+
+    def policy(self, fstr, **kwargs):
+        f = self.embed(fstr).reshape([self.nD, self.nF])
+        self.phi = self.get_phi()
+        weight_f = (self.phi*f).reshape([-1, self.nI])
+        q_hat = weight_f@self.q_choice
+        m_A = mask_fn(self.nA, kwargs['a_ava'])
+        pi = softmax(self.beta*q_hat - (1-m_A)*max_, axis=1)
+        return pi.reshape([-1]) 
+
+    def learn(self):
+        self._learn_choice_model()
+        self._learn_attn_model()
+        
+    def _learn_choice_model(self):
+        fstr, a, r = self.mem.sample('f', 'a', 'r')
+        # embeding, prediction error
+        f = self.embed(fstr).reshape([self.nD, self.nF])
+        weight_f = (self.phi*f).reshape([-1, self.nI])
+        q_hat = weight_f@self.q_choice
+        rpe = r - q_hat[0, a]
+        # for the chosen feature & action  
+        f = f.reshape([-1])
+        q_selected = self.q_choice[f>0, a] + self.eta*self.phi.reshape([-1])*rpe
+        # update q table 
+        self.q_choice[f>0, a] = q_selected
+
+    def _learn_attn_model(self):
+        fstr, a, r = self.mem.sample('f', 'a', 'r')
+        # embeding, prediction error
+        f = self.embed(fstr).reshape([self.nD, self.nF])
+        weight_f = (self.phi*f).reshape([-1, self.nI])
+        q_hat = weight_f@self.q_attn
+        rpe = r - q_hat[0, a]
+        # for the chosen feature & action  
+        f = f.reshape([-1])
+        q_selected = self.q_attn[f>0, a] + self.eta_attn*rpe
+        # for the unchosen feature & action
+        self.q_attn += self.eps*(0 - self.q_attn) 
+        # update q table 
+        self.q_attn[f>0, a] = q_selected

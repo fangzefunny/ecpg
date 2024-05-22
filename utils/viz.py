@@ -96,7 +96,7 @@ class viz:
         scatter_size=7, scatter_alpha=1,
         mean_marker_size=6, err_capsize=.11, 
         add_errs=True, errorbar='se', errorcolor=[.3]*3,
-        errorlw=2, pointdoge=.4):
+        errorlw=2):
         g_var = y if orient=='h' else x
         v_var = x if orient=='h' else y
         v=sns.violinplot(data=data, 
