@@ -53,9 +53,9 @@ class viz:
     Pal_type2 = [gg1, gg2, gg3]
 
     # Morandi
-    m0      = np.array([ 16, 186, 184]) / 255
-    m1      = np.array([236, 123, 119]) / 255
-    m2      = np.array([188, 162, 149]) / 255
+    m0      = np.array([ 35, 185, 185]) / 255
+    m1      = np.array([239, 117, 112]) / 255
+    m2      = np.array([108,  63,  75]) / 255
     Pal_fea = [m2, m1, m0]
 
     # lambda gradient
@@ -83,12 +83,18 @@ class viz:
     def get_style(): 
         '''The style of our figures'''
         sns.set_context("talk")
+        #sns.set_style("ticks", {'axes.grid': False})
+        mpl.rcParams["font.family"]        = "Arial"
         mpl.rcParams['pdf.fonttype']       = 42
         mpl.rcParams['axes.spines.right']  = False
         mpl.rcParams['axes.spines.top']    = False
+        mpl.rcParams['font.weight']        = 'regular'
         mpl.rcParams['savefig.format']     = 'pdf'
         mpl.rcParams['savefig.dpi']        = 300
-        mpl.rcParams['figure.facecolor']   = 'w'
+        mpl.rcParams['figure.facecolor']   = 'None'
+        mpl.rcParams['figure.edgecolor']   = 'None'
+        mpl.rcParams['axes.facecolor']     = 'None'
+        mpl.rcParams['legend.frameon']     = False
 
     @staticmethod
     def violin(ax, data, x, y, order, palette, orient='v',

@@ -28,7 +28,7 @@ for data_set in "${data_sets[@]}"; do
     ## step 2: fit models to data
     case "$data_set" in
         # case 1
-        "exp1") declare models=("ecPG");; #"rmPG" "caPG" "ecPG" "l2PG"
+        "exp1") declare models=("rmPG");; #"rmPG" "caPG" "ecPG" "l2PG"
         # case 2 
         "exp2") declare models=("LC");; #  "LC" "ACL"   "l2PG_fea"  "caPG_fea"
     esac 

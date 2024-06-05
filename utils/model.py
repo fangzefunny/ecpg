@@ -323,9 +323,9 @@ class fea_base:
                 pi[s, :] += self.policy(s, a_ava1=a1, a_ava2=a2)   
         return pi  
 
-# ------------------------------#
-#         Classic models        #
-# ------------------------------#
+# -----------------------------------#
+#         Computational models       #
+# -----------------------------------#
 
 class rmPG(base_agent):
     name     = 'RMPG'
@@ -337,6 +337,7 @@ class rmPG(base_agent):
     p_trans  = [lambda x: clip_exp(x)]*len(p_names)
     p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
     n_params = len(p_names)
+    voi      = ['i_SZ']
     insights = ['pol']
     color    = np.array([200, 200, 200]) / 255
     marker   = 's'
@@ -375,6 +376,8 @@ class rmPG(base_agent):
         pi  = softmax(f@self.phi-(1-m_A)*max_, axis=1)
         return pi.reshape([-1])
 
+    def get_i_SZ(self): return 1
+
 class ecPG_sim(base_agent):
     '''Efficient coding policy gradient (analytical)
 
@@ -406,7 +409,7 @@ class ecPG_sim(base_agent):
     p_trans  = [lambda x: clip_exp(x)]*len(p_names)
     p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
     n_params = len(p_names)
-    voi      = []
+    voi      = ['i_SZ']
     insights = ['enc', 'dec', 'pol']
     color    = viz.Red
     marker   = '^'
@@ -478,21 +481,22 @@ class ecPG_sim(base_agent):
     # --------- some predictions ----------- #
         
     def get_i_SZ(self):
-        return MI(self.p_S, self.psi_Z1S, self.p_Z)
-
+        psi_Z1S = softmax(self.F@self.theta, axis=1)
+        return MI(self.p_S, psi_Z1S, self.p_Z)
+    
     def get_i_ZA(self):
-        p_A = (self.p_Z.T @ self.rho_A1Z).T
-        return MI(self.p_Z, self.rho_A1Z, p_A)
+        rho_A1Z = softmax(self.phi, axis=1)
+        p_A = (self.p_Z.T @ rho_A1Z).T
+        return MI(self.p_Z, rho_A1Z, p_A)
         
     def get_enc(self):
-        return self.psi_Z1S
+        return softmax(self.F@self.theta, axis=1)
     
     def get_dec(self):
         acts = [[0, 1], [2, 3]]
         rho  = 0
         for act in acts:
-            a1, a2 = act
-            m_A   = mask_fn(self.nA, a1, a2)
+            m_A   = mask_fn(self.nA, act)
             p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
             p_A1Z  /= p_A1Z.sum(1, keepdims=True)
             rho += p_A1Z
@@ -543,7 +547,7 @@ class caPG(ecPG):
     p_trans  = [lambda x: clip_exp(x)]*len(p_names)
     p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
     n_params = len(p_names)
-    voi      = []
+    voi      = ['i_SZ']
     insights = ['enc', 'dec', 'pol']
     color    = viz.r2
     marker   = 'o'
@@ -555,9 +559,6 @@ class caPG(ecPG):
         self.alpha_psi  = params[0]
         self.alpha_rho  = params[1]
         self.b          = 1/2
-
-    def _learn_pZ(self):
-        pass 
 
     def _learn_enc_dec(self):
         # get data 
@@ -582,6 +583,10 @@ class caPG(ecPG):
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
 
+# -------------------------------------#
+#         Machine learning tricks      #
+# -------------------------------------#
+
 class l2PG(ecPG):
     name     = 'L2PG'
     p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
@@ -598,10 +603,7 @@ class l2PG(ecPG):
     marker   = 'o'
     size     = 30
     alpha    = .8
-    color    = viz.Green
-
-    def _learn_pZ(self):
-        pass 
+    color    = np.array([155, 153, 176]) / 255
 
     def _learn_enc_dec(self):
         # get data 
@@ -629,6 +631,7 @@ class l2PG(ecPG):
 
 class l1PG(l2PG):
     name     = 'L1PG'
+    color    = np.array([154, 171, 165]) / 255
 
     def _learn_enc_dec(self):
         # get data 
@@ -653,7 +656,56 @@ class l1PG(l2PG):
 
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
- 
+
+class dcPG(l2PG):
+    name     = 'DCPG'
+    p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
+    p_bnds   = [(-1000, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-10, 1)]
+    p_poi    = p_names
+    p_priors = [halfnorm(0, 40)]*len(p_names)
+    p_trans  = [lambda x: clip_exp(x)]*len(p_bnds)
+    p_links  = [lambda x: np.log(x+eps_)]*len(p_bnds)
+    poi_raw  = [(.01, 15), (.01, 15), (.01, 2)]     
+    n_params = len(p_names)
+    voi      = []
+    insights = ['encoder', 'decoder', 'policy', 'attn', 'theta']
+    marker   = 'o'
+    size     = 30
+    alpha    = .8
+    color    = np.array([155, 150, 192]) / 255
+
+    def _learn_pZ(self):
+        self.p_Z1S = softmax(self.F@self.theta, axis=1)
+        self.p_S   = np.ones([self.nS, 1]) / self.nS  # nSx1 
+        self.p_Z   = self.p_Z1S.T @ self.p_S  
+        p_A1Z      = softmax(self.phi, axis=1)
+        self.p_A   = p_A1Z.T @ self.p_Z 
+
+    def _learn_enc_dec(self):
+        # get data 
+        fstr, a_ava, a, r = self.mem.sample('f', 'a_ava', 'a', 'r')
+       
+        # prediction 
+        f     = self.embed(fstr)
+        p_Z1s = softmax(f@self.theta, axis=1)
+        m_A   = mask_fn(self.nA, a_ava)
+        p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
+        p_a1Z = p_A1Z[:, [a]]
+        u = np.array([r - self.b])[:, np.newaxis] 
+        
+        # backward
+        sTheta = u*p_a1Z.T
+        gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
+                    sTheta - p_Z1s@sTheta.T))
+       
+        log_diff = np.log(p_A1Z+eps_) - np.log(self.p_A.T+eps_)
+        sPhi = (u/(self.lmbda+eps_) - log_diff[:, [a]])*p_Z1s.T
+        gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
+
+        self.theta -= self.alpha_psi * gTheta
+        self.phi   -= self.alpha_rho * gPhi
+
 # ------------------------------#
 #      Feature-based models     #
 # ------------------------------# 
@@ -734,8 +786,23 @@ class l2PG_fea(l2PG):
 
 class l1PG_fea(l2PG_fea):
     name     = 'fL1PG'
+    color    = l1PG.color
 
     def _learn_enc_dec(self): l1PG._learn_enc_dec(self)
+
+class dcPG_fea(l2PG_fea):
+    name     = 'fDCPG'
+    color    = dcPG.color
+
+    def _learn_pZ(self):
+        self.p_Z1S = softmax(self.F@self.theta, axis=1)
+        self.p_S = np.ones([self.nS, 1]) / self.nS 
+        self.p_S = np.vstack([self.p_S, 0])
+        self.p_Z   = self.p_Z1S.T @ self.p_S  
+        p_A1Z      = softmax(self.phi, axis=1)
+        self.p_A   = p_A1Z.T @ self.p_Z 
+
+    def _learn_enc_dec(self): dcPG._learn_enc_dec(self)
 
 # ----------------------------------------#
 #      Representation learning models     #
@@ -765,7 +832,7 @@ class LC(base_agent):
     n_params = len(p_names)
     voi = ['last_z']
     insights = ['pol', 'p_Z1S']
-    color = np.array([201, 173, 167]) / 255
+    color = np.array([181, 228, 140]) / 255
 
     def __init__(self, env, params):
         super().__init__(env, params)
@@ -912,7 +979,7 @@ class MA(base_agent):
     n_params = len(p_names)
     voi = []
     insights = ['pol', 'attn']
-    color = np.array([201, 173, 167]) / 255
+    color = np.array([153, 217, 140]) / 255
      
     def load_params(self, params):
         # from gaussian space to actual space  
@@ -1001,7 +1068,7 @@ class ACL(base_agent):
     n_params = len(p_names)
     voi = []
     insights = ['pol', 'attn']
-    color = np.array([201, 173, 167]) / 255
+    color = np.array([118, 200, 147]) / 255
         
     def load_params(self, params):
         # from gaussian space to actual space  

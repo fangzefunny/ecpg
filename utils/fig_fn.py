@@ -17,90 +17,9 @@ from utils.tools import *
 # define path
 pth = os.path.dirname(os.path.abspath(__file__))
 
-def generalize_exp1(ax, data_set, models):
-    data = [] 
-    for m in models:
-        datum = get_sim_data(data_set, m)
-        datum['group'] = datum['group'].map({
-                'control': 'trained', 
-                'trained': 'trained',
-                'untrained': 'untrained'
-        })
-        sel_datum = datum.query('stage=="test"').groupby(
-                    by=['sub_id', 'group'])['r'].mean().reset_index()
-        sel_datum['model'] = m
-        data.append(sel_datum)
-    data = pd.concat(data, axis=0)
-    viz.violin(ax, data=data, y='r',
-            x='group', order=['trained', 'untrained'],
-            hue='model', hue_order=models,
-            palette=[eval(m).color for m in models], 
-            errorbar='sd',
-            scatter_alpha=.75, 
-            scatter_size=4,
-            err_capsize=.15,
-            errorlw=2.75,
-            mean_marker_size=8.5,
-            pointdoge=.55)
-    ax.spines['left'].set_position(('axes',-0.08))
-    ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
-    ax.set_box_aspect(.8)
-    ax.set_xticks([0, 1])
-    ax.set_yticks([0, .25, .5, .75, 1])
-    ax.set_yticklabels([0.0, '', .5, '', 1.])
-    ax.set_xticklabels(['Trained', 'Untrained'])
-    ax.set_ylabel('Accuracy')
-    ax.set_ylim([-.01, 1.05])
-    ax.set_xlabel('')
+# ------------- General Figures --------------- #
 
-def learning_curve_exp1(ax, data, color=viz.new_blue, with_target_data_set=False):
-    # show the curve 
-    data['tps'] = data.query('group!="untrained"').apply(
-        lambda x: x['tps']+(x['stage']=="test")*10
-    , axis=1)
-    sel_data = data.groupby(
-        by=['sub_id', 'tps'])['r'].mean().reset_index()
-    if with_target_data_set==False:
-        # visualize
-        sns.lineplot(x='tps', y='r', data=sel_data, 
-                    err_style='band', 
-                    color=color,
-                    lw=3,
-                    ax=ax)
-    else:
-        # get target
-        target_data = get_sim_data(with_target_data_set, 'human')
-        target_data['tps'] = target_data.apply(
-            lambda x: x['tps']+(x['stage']=="test")*10
-        , axis=1)
-        target_data = target_data.query('group!="untrained"').groupby(
-                by=['sub_id', 'tps'])['r'].mean().reset_index()
-        # visualize the model prediction 
-        sns.lineplot(x='tps', y='r', data=sel_data, 
-                    err_style='band', 
-                    color=color,
-                    err_kws={'alpha':.55}, 
-                    lw=0,
-                    ax=ax)
-        # show the target data 
-        sns.lineplot(x='tps', y='r', data=target_data, 
-                    color=human.color,
-                    lw=0,
-                    ax=ax, 
-                    err_style='bars',  
-                    err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
-    ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1.5)
-    ax.spines['left'].set_position(('axes',-0.05))
-    ax.set_box_aspect(.47)
-    ax.set_xticks([0, 5, 10, 15])
-    ax.set_xticklabels([1, 6, 11, 16])
-    ax.set_yticks([.5, .6, .7, .8, .9])
-    ax.set_yticklabels([.5, '', .7, '', .9])
-    ax.set_ylabel('Acc.')
-    ax.set_xlabel('#Exposures per stimulus')
-    ax.set_ylim([.45, .9])
-
-def model_compare(ax, data_set, models, n_data=None, method='mle', cr='bic'):
+def model_compare_per_participant(ax, data_set, models, n_data=None, method='mle', cr='bic'):
     crs_table = [] 
     for m in models:
         fname = f'{pth}/../fits/{data_set}/fit_sub_info-{m}-{method}.pkl'
@@ -146,34 +65,127 @@ def model_compare(ax, data_set, models, n_data=None, method='mle', cr='bic'):
     ax.set_xlim([-2, sort_table.shape[0]+5])
     ax.legend(loc='upper left')
     ax.spines['left'].set_position(('axes',-0.02))
-    ax.set_xlabel(f'Participant index\n(sorted by the minimum {cr} score over all models)')
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+    ax.set_xlabel(f'Participant index (sorted by the minimum {cr} score over all models)')
     ax.set_ylabel(cr.upper())
 
-def gen_per_model_exp2(ax, data):
-    if 'control' in data['group'].unique():
-        data['group'] = data['group'].map(
-                {'trained': 'trained', 'control': 'trained', 'untrained': 'untrained'}
-        )
-    sel_data = data.query('stage=="test"').groupby(
-                    by=['sub_id', 'group', 'block_type'])['r'].mean().reset_index()
-    viz.violin(ax, data=sel_data, y='r',
+def model_compare_violin(axs, data_set, models):
+    llh_table, pxp = get_llh_score(data_set, models, method='map', 
+                                if_bms=True, use_bic=True)
+    ax = axs[0]
+    viz.violin(ax, data=llh_table, x='BIC',
+            y='model', order=models,
+            orient='h', errorbar='sd',
+            scatter_size=4,
+            mean_marker_size=8,
+            errorlw=3,
+            palette=[eval(m).color for m in models]) 
+    ax.set_yticks(range(len(models)))
+    ax.set_yticklabels([eval(m).name for m in models])
+    ax.set_xlim([-60, 170])
+    ax.set_xticks([-50, 0, 50, 100, 150,])
+    ax.set_xticklabels([-50, 0, 50, '', 150])
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+    ax.spines['left'].set_position(('axes',-0.05))
+    ax.axvline(x=0, ymin=0, ymax=1, ls='--', lw=1.5, color='k')
+    ax.set_ylabel('')
+    ax.set_xlabel(r'$\Delta$'+'BIC')
+    ax = axs[1]
+    sns.barplot(x='pxp', y='model', data=pxp,
+                hue='model', hue_order=models,
+                edgecolor=[.2]*3, lw=1.75,
+                palette=[eval(m).color for m in models])
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+
+# ----------- Experiment 1 Figures ------------- #
+
+def generalize_exp1(ax, data_set, models):
+    data = [] 
+    for m in models:
+        datum = get_sim_data(data_set, m)
+        datum['group'] = datum['group'].map({
+                'control': 'trained', 
+                'trained': 'trained',
+                'untrained': 'untrained'
+        })
+        yvar = 'r' if m=='human' else 'acc'
+        sel_datum = datum.query('stage=="test"').groupby(
+                    by=['sub_id', 'group'])[yvar].mean().reset_index()
+        sel_datum = sel_datum.rename(columns={'r': 'r', 'acc': 'r'})
+        sel_datum['model'] = m
+        data.append(sel_datum)
+    data = pd.concat(data, axis=0)
+    viz.violin(ax, data=data, y='r',
             x='group', order=['trained', 'untrained'],
-            hue='block_type', hue_order=['cons', 'cont', 'conf'],
-            palette=viz.Pal_type, 
+            hue='model', hue_order=models,
+            palette=[eval(m).color for m in models], 
             errorbar='sd',
             scatter_alpha=.75, 
-            scatter_size=5,
-            err_capsize=.14,
-            mean_marker_size=9,
+            scatter_size=4,
+            err_capsize=.15,
             errorlw=2.75,
-            pointdoge=.55)
+            mean_marker_size=8.5)
+    ax.spines['left'].set_position(('axes',-0.08))
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.75)
     ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
-    ax.set_box_aspect(1.1)
+    ax.set_box_aspect(.8)
     ax.set_xticks([0, 1])
+    ax.set_yticks([0, .25, .5, .75, 1])
+    ax.set_yticklabels([0.0, '', .5, '', 1.])
     ax.set_xticklabels(['Trained', 'Untrained'])
     ax.set_ylabel('Accuracy')
     ax.set_ylim([-.01, 1.05])
     ax.set_xlabel('')
+
+def learning_curve_exp1(ax, data, color=viz.new_blue, with_target_data_set=False):
+    # show the curve 
+    data['tps'] = data.query('group!="untrained"').apply(
+        lambda x: x['tps']+(x['stage']=="test")*10
+    , axis=1)
+    sel_data = data.groupby(
+        by=['sub_id', 'tps'])['acc'].mean().reset_index()
+    if with_target_data_set==False:
+        # visualize
+        sns.lineplot(x='tps', y='acc', data=sel_data, 
+                    err_style='band', 
+                    color=color,
+                    lw=3,
+                    ax=ax)
+    else:
+        # get target
+        target_data = get_sim_data(with_target_data_set, 'human')
+        target_data['tps'] = target_data.apply(
+            lambda x: x['tps']+(x['stage']=="test")*10
+        , axis=1)
+        target_data = target_data.query('group!="untrained"').groupby(
+                by=['sub_id', 'tps'])['r'].mean().reset_index()
+        # visualize the model prediction 
+        sns.lineplot(x='tps', y='acc', data=sel_data, 
+                    err_style='band', 
+                    color=color,
+                    err_kws={'alpha':.55}, 
+                    lw=0,
+                    ax=ax)
+        # show the target data 
+        sns.lineplot(x='tps', y='r', data=target_data, 
+                    color=human.color,
+                    lw=0,
+                    ax=ax, 
+                    err_style='bars',  
+                    err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
+    ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1.5)
+    ax.spines['left'].set_position(('axes',-0.05))
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.75)
+    ax.set_box_aspect(.47)
+    ax.set_xticks([0, 5, 10, 15])
+    ax.set_xticklabels([1, 6, 11, 16])
+    ax.set_yticks([.5, .6, .7, .8, .9])
+    ax.set_yticklabels([.5, '', .7, '', .9])
+    ax.set_ylabel('Acc.')
+    ax.set_xlabel('#Exposures per stimulus')
+    ax.set_ylim([.45, .9])
+
+# ----------- Experiment 2 Figures ------------- #
 
 def generalize_exp2(axs, data_set, models, method='mle'):
     data = [] 
@@ -185,8 +197,10 @@ def generalize_exp2(axs, data_set, models, method='mle'):
                 'trained': 'trained',
                 'untrained': 'untrained'
         })
+        yvar = 'r' if m=='human' else 'acc'
         sel_datum = datum.query('stage=="test"').groupby(
-                    by=['sub_id', 'group', 'block_type'])['r'].mean().reset_index()
+            by=['sub_id', 'group', 'block_type'])[yvar].mean().reset_index()
+        sel_datum = sel_datum.rename(columns={'r': 'r', 'acc': 'r'})
         sel_datum['model'] = m
         data.append(sel_datum)
     data = pd.concat(data, axis=0)
@@ -203,8 +217,9 @@ def generalize_exp2(axs, data_set, models, method='mle'):
             errorlw=2.75,
             mean_marker_size=8)
         ax.spines['left'].set_position(('axes',-0.04))
+        for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
         ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
-        ax.set_box_aspect(.95)
+        ax.set_box_aspect(.75)
         ax.set_xticks([0, 1])
         ax.set_yticks([0, .25, .5, .75, 1])
         ax.set_yticklabels([0.0, '', .5, '', 1.])
@@ -213,19 +228,20 @@ def generalize_exp2(axs, data_set, models, method='mle'):
         ax.set_ylim([-.01, 1.05])
         ax.set_xlabel('')
 
-def learning_curve_exp2(ax, data, with_target_data_set=False):
+def learning_curve_exp2(ax, data, with_target_data_set=False, human=False):
     # show the curve
     data = data.query('group in ["control", "trained"]').copy()
     data['tps'] = data.apply(
         lambda x: x['tps']+(x['stage']=="test")*10
     , axis=1)
+    yvar = 'r' if human else 'acc'
     sel_data = data.groupby(
-        by=['sub_id', 'tps', 'block_type'])['r'].mean().reset_index()
+        by=['sub_id', 'tps', 'block_type'])[yvar].mean().reset_index()
     if with_target_data_set==False:
         # visualize
-        sns.lineplot(x='tps', y='r', data=sel_data, 
+        sns.lineplot(x='tps', y=yvar, data=sel_data, 
                     hue='block_type', hue_order=['cons', 'cont', 'conf'],
-                    err_style='bars', errorbar="se", 
+                    err_style='bars', #errorbar="se", 
                     palette=viz.Pal_type,
                     legend=False,
                     lw=2.5,
@@ -240,9 +256,9 @@ def learning_curve_exp2(ax, data, with_target_data_set=False):
         target_data = target_data.groupby(
                 by=['sub_id', 'tps', 'block_type'])['r'].mean().reset_index()
         # visualize the model prediction 
-        sns.lineplot(x='tps', y='r', data=sel_data, 
+        sns.lineplot(x='tps', y='acc', data=sel_data, 
                     hue='block_type', hue_order=['cons', 'cont', 'conf'],
-                    err_style='band', errorbar="se", 
+                    err_style='band', #errorbar="se", 
                     palette=viz.Pal_type,
                     err_kws={'alpha':.55}, 
                     legend=False,
@@ -254,22 +270,23 @@ def learning_curve_exp2(ax, data, with_target_data_set=False):
                     ax=ax, 
                     legend=False,
                     hue='block_type', hue_order=['cons', 'cont', 'conf'],
-                    err_style='bars', errorbar="se", 
+                    err_style='bars', #errorbar="se", 
                     palette=viz.Pal_type,
                     err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
     ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1)
     #ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
     ax.spines['left'].set_position(('axes',-0.05))
-    ax.set_box_aspect(.5)
+    ax.set_box_aspect(.6)
     ax.set_xticks([0, 5, 10, 15])
     ax.set_xticklabels([1, 6, 11, 16])
     ax.set_yticks([.5, .6, .7, .8, .9])
     ax.set_yticklabels([.5, '', .7, '', .9])
     ax.set_ylabel('Acc.')
     ax.set_xlabel('#Exposures per stimulus')
-    ax.set_ylim([.45, .9])
+    ax.set_ylim([.45, .95])
 
-def viz_probe(axs, data_set, models, method, goodPoor=None):
+def probe_policy(axs, data_set, models, method, goodPoor=None):
     n = len(models) 
     for i, m in enumerate(models):
         if m == 'human':
@@ -318,7 +335,7 @@ def viz_probe(axs, data_set, models, method, goodPoor=None):
             ax.set_xticks(range(4))
             ax.set_xticklabels([r'$a_1$', r'$a_2$', r'$a_3$', r'$a_4$'])
 
-def get_corr_matrix(data_set, models=['rmPG_fea', 'caPG_fea', 'ecPG_fea'], method='mle', goodPoor=None):
+def get_prob_corr_matrix(data_set, models=['rlPG_fea', 'cascade_fea', 'rdPG_fea'], method='mle', goodPoor=None):
     p_tables = {}
     conds = ['cons', 'cont', 'conf']
     for i, m in enumerate(['human']+models):
@@ -356,15 +373,13 @@ def get_corr_matrix(data_set, models=['rmPG_fea', 'caPG_fea', 'ecPG_fea'], metho
                     ).loc[['cons', 'cont', 'conf'], models]
     return corr_data
 
-def show_corr_mat(corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_fea'], 
-                  ub=.5, 
+def show_prob_corr_mat(ax, corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_fea'], 
                   font_scale=50,
                   marker_scale=5500):
     block_types = ['conf', 'cont', 'cons']
-    fig, ax = plt.subplots(figsize=(1.5*len(models), 4.5))
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
                         'cool_warm',   [viz.new_blue, viz.lRed*.9, viz.new_red])
-    norm = plt.Normalize(0, ub)
+    norm = plt.Normalize(0, .75)
     f_mean = corr_data.values.mean()*font_scale
     for i, block_type in enumerate(block_types):
         for j, model in enumerate(models):
@@ -379,7 +394,7 @@ def show_corr_mat(corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_f
     ax.set_xticks(np.arange(len(models)), minor=False)
     ax.set_xticklabels([eval(m).name for m in models])
     ax.set_yticks(np.arange(len(block_types)), minor=False)
-    ax.set_yticklabels(block_types)
+    ax.set_yticklabels(['Conflict', 'Control', 'Consistent'])
     ax.set_xlim([-.5, len(models)-.5])
     ax.set_ylim([-.5, len(block_types)-.5])
     ax.spines
@@ -387,10 +402,144 @@ def show_corr_mat(corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_f
     for pos in ['bottom', 'top', 'left', 'right']: 
         ax.spines[pos].set_color(gray)
         ax.spines[pos].set_visible(True)
+        ax.spines[pos].set_linewidth(3)
     for xy in ['x', 'y']: ax.tick_params(axis=xy, colors=gray, which='major')
     plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, shrink=.75)
-    fig.tight_layout()
 
+# ----------- Supplementary Figures ------------- #
+
+def test_perform_target(ax, pred_data, tar_data_set, block_type='block', color=viz.Blue):
+    # preprocess the model prediction
+    pred_data = pred_data.query(f'stage=="test"&block_type=="{block_type}"').groupby(
+        by=['sub_id', 'group'])['r'].mean().reset_index()
+    pred_data['agent'] = 'model'
+    # preprocess the target data
+    tar_data  = get_sim_data(tar_data_set, 'human')
+    tar_data['group'] = tar_data['group'].map(
+        {'control': 'trained', 'trained': 'trained', 
+         'untrained': 'untrained', 'probe': 'probe'}
+    )
+    tar_data = tar_data.query(f'stage=="test"&block_type=="{block_type}"').groupby(
+        by=['sub_id', 'group'])['r'].mean().reset_index()
+    tar_data['agent'] = 'human'
+    # combine data
+    comb_data = pd.concat([pred_data, tar_data], axis=0, ignore_index=True)    
+    # visualize
+    viz.violin_with_tar(ax=ax, 
+            data=comb_data, y='r', 
+            x='group', order=['trained', 'untrained'], 
+            color=color, errorbar='sd',
+            errorcolor=[.38]*3, err_capsize=.15,
+            errorlw=3.2, scatter_size=2,
+            hue='agent', hue_order=['human', 'model'])
+    ax.axhline(y=.5, xmin=0, xmax=1, lw=1.2, 
+            color=[.2, .2, .2], ls='--')
+    ax.set_xticks([0, 1])
+    ax.set_ylim([0, 1])
+    ax.set_xticklabels(['Trained', 'Untrained'], fontsize=14)
+    ax.spines['left'].set_position(('axes',-0.08))
+    ax.set_xlabel('')
+    ax.set_ylabel('Acc.')
+    ax.set_ylim([-.05, 1.1])
+
+def show_gen_supp(axs, data_set, model, method):
+    pred_data = get_sim_data(data_set, model, method=method)
+    pred_data['group'] = pred_data['group'].map(
+        {'control': 'trained', 'trained': 'trained', 
+            'untrained': 'untrained', 'probe': 'probe'}
+    )
+    block_types = ['cons', 'cont', 'conf']
+    block_titles = ['Consistent', 'Control', 'Conflict']
+    for i, block_type in enumerate(block_types):
+        ax = axs[i]
+        test_perform_target(ax, pred_data, tar_data_set=data_set,
+                            block_type=block_type, color=viz.Pal_type[i])
+        for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
+        ax.set_title(block_titles[i])
+        ax.set_box_aspect(1.1)
+
+def show_probe_supp(axs, data_set, models, method, goodPoor=None):
+    n = len(models) 
+    for i, m in enumerate(models):
+        if m == 'human':
+            fname = f'{pth}/../data/{data_set}-human.csv'
+            s = 1
+        else:
+            fname = f'{pth}/../simulations/{data_set}/{m}/sim-{method}.csv'
+            s = 10
+        data = pd.read_csv(fname, index_col=0)
+        sel_data = data.query('group=="probe"').reset_index()
+        for j, cond in enumerate(['cons', 'cont', 'conf']):
+            ax = axs[i, j] if n > 1 else axs[j]
+            sdata = sel_data.query(f'block_type=="{cond}"')
+            if goodPoor is not None: sdata = sdata.query(f'goodPoor=="good"') 
+            gdata = sdata.groupby(by=['sub_id', 'a', 'block_type']).count()['r'].reset_index()
+            ptable = gdata.pivot_table(values='r', index='sub_id', columns='a').fillna(0) / (6*s)
+            ptable.columns = [0, 1, 2, 3]
+            ptable = ptable.reset_index()
+            ptable = ptable.melt(id_vars='sub_id', value_vars=[0, 1, 2, 3]
+                        ).rename(columns={'variable': 'a', 'value':'prop'})
+        
+            sns.stripplot(x='a', y='prop', data=ptable, 
+                        color=viz.Pal_type[j], #dodge=True, 
+                        edgecolor='auto', size=1.8,
+                        jitter=True, alpha=.7,
+                        legend=False, zorder=2,
+                        ax=ax)
+            sns.violinplot(x='a', y='prop', data=ptable,
+                        legend=False, alpha=.5, inner=None,
+                        density_norm='width', edgecolor=[.8]*3,
+                        color=viz.Pal_type[j],
+                        ax=ax)
+            sns.barplot(x='a', y='prop', data=ptable,
+                        width=.75, errorbar=('ci', 95), lw=2.2,
+                        edgecolor=viz.Pal_type[j], 
+                        facecolor=viz.Pal_type[j].tolist()+[.2],
+                        err_kws={'color': [.2, .2, .2], 'linewidth': 2.1},
+                        capsize=.2,
+                        color='w', ax=ax)
+            #ax.set_box_aspect(.9)
+            ax.set_xlabel('')
+            
+            ax.set_ylim([0, 1.1])
+            if j==1: ax.set_title(eval(m).name, fontsize=12)
+                
+            for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+            if j==0:
+                ax.spines['left'].set_visible(True)
+                ax.spines['left'].set_position(('axes',-0.05))
+                # ax.set_yticks([0, 1])
+                # ax.set_yticklabels([.5, 1])
+                ax.set_yticks([])
+                ax.set_ylabel('')
+            else:
+                ax.spines['left'].set_visible(False)
+                ax.set_yticks([])
+                ax.set_ylabel('')
+            if i==n-1:
+                ax.set_xticks(range(4)) 
+                #ax.set_xticks([]) 
+                ax.set_xticklabels([r'$a_1$', r'$a_2$', r'$a_3$', r'$a_4$'], fontsize=12)
+            else:
+                ax.set_xticks([]) 
+
+def get_phi(data_set, model, method):
+    gridsize = (4, 6)
+    fig = plt.figure(figsize=(9.3, 6.5))
+    ax1 = plt.subplot2grid(gridsize, (0, 0), colspan=2, rowspan=2)
+    ax2 = plt.subplot2grid(gridsize, (0, 2), colspan=2, rowspan=2)
+    ax3 = plt.subplot2grid(gridsize, (0, 4), colspan=2, rowspan=2)
+    ax4 = plt.subplot2grid(gridsize, (2, 0), colspan=3, rowspan=2)
+    axs_probe = np.array([[plt.subplot2grid(gridsize, (2+j, 3+i), colspan=1, rowspan=1) 
+                        for i in range(3)] for j in range(2)])
+    show_gen_supp([ax1, ax2, ax3], data_set, model, method)
+    learning_curve_exp2(ax4, get_sim_data(data_set, model, method), with_target_data_set=data_set)
+    show_probe_supp(axs_probe, 'exp2', ['human']+[model], method='map', goodPoor=False)
+    for ax in [ax2, ax3]:
+        ax.set_yticklabels([])
+        ax.set_ylabel('')
+    fig.tight_layout()
+    fig.subplots_adjust(wspace=0.32)
 
 # -------------- Axuiliary ---------------- #
 
@@ -506,11 +655,10 @@ def iSZ_reduct(exp, agents, method='mle'):
         iSZ_reduct = d59['i_SZ'] - d0['i_SZ']
         cat_datum = d0.merge(d59, on='sub_id')
         cat_datum['iSZ_reduct'] = iSZ_reduct
-        cat_datum['agent'] = agent
-        data.append(cat_datum[['sub_id', 'iSZ_reduct', 'agent']])
+        cat_datum['model'] = agent
+        data.append(cat_datum[['sub_id', 'iSZ_reduct', 'model']])
 
     comb_data = pd.concat(data, axis=0)
-    comb_data['model'] = 'model'
     return comb_data
 
 def cmp_rdPG_rdPG0(exp, cond, goodpoor=None):
@@ -660,16 +808,16 @@ def get_table2(exp, agents, method='mle'):
 
 # ----- Human and model behaviors ----- #
 
-def get_crs(exp, agents, method='mle'):
+def get_crs(data_set, models, method='mle'):
     
     cols = ['tot_nll', 'tot_aic', 'tot_bic', 
             'ass_nll', 'ass_aic', 'ass_bic', 
             'gen_nll', 'gen_aic', 'gen_bic', 
             'agent', 'sub_id']
     mat = {k: [] for k in cols}
-    for m in agents:
+    for m in models:
         n_param = eval(m).n_params
-        fname = f'{pth}/../analyses/{exp}/{m}/{method}-eval.csv'
+        fname = f'{pth}/../analyses/{data_set}/{m}/{method}-eval.csv'
         data  = pd.read_csv(fname)
         data['nll'] = -data['ll']
         
@@ -711,60 +859,6 @@ def get_crs(exp, agents, method='mle'):
             values=cols[:-2])
     
     return crs_table
-
-def viz_model_cmp(crs_table, exp, agents, crs='bic'):
-    
-    sel_table = crs_table[f'tot_{crs}'].copy()
-    sel_table[f'min_{crs}'] = sel_table.apply(
-        lambda x: np.min([x[m] for m in agents]), 
-        axis=1)
-    sort_table = sel_table.sort_values(by=f'min_{crs}').reset_index()
-    sort_table['sub_seq'] = sort_table.index
-
-    fig, ax = plt.subplots(1, 1, figsize=(11, 4.5))
-    if ('rmPG_fea' in agents) or ('rmPG' in agents):
-        m = 'rmPG' if exp=='exp1' else 'rmPG_fea'
-        sns.scatterplot(x='sub_seq', y=m, 
-                        data=sort_table, label=eval(m).name,
-                        marker='s', color=[.7, .7, .7], 
-                        s=20, alpha=.8,
-                        edgecolor='none', ax=ax)
-    if ('caPG_fea' in agents) or ('caPG' in agents):
-        m = 'caPG' if exp=='exp1' else 'caPG_fea'
-        sns.scatterplot(x='sub_seq', y=m, 
-                        data=sort_table, label=eval(m).name,
-                        marker='o', edgecolor=viz.r2, 
-                        linewidth=1.1, s=20, alpha=.8,
-                        facecolor='none', ax=ax)
-    if ('LC' in agents):
-        m = 'LC'
-        sns.scatterplot(x='sub_seq', y=m, 
-                        data=sort_table, label=eval(m).name,
-                        marker='s', color=eval(m).color, 
-                        s=20, alpha=.8,
-                        edgecolor='none', ax=ax)
-    if ('ACL' in agents):
-        m = 'ACL'
-        sns.scatterplot(x='sub_seq', y=m, 
-                        data=sort_table, label=eval(m).name,
-                        marker='x', color=eval(m).color, 
-                        linewidth=1.1, s=20, alpha=.8,
-                        ax=ax)
-    if ('ecPG' in agents) or ('ecPG_fea' in agents):
-        m = 'ecPG' if exp=='exp1' else 'ecPG_fea'
-        sns.scatterplot(x='sub_seq', y=m, 
-                        data=sort_table, label=eval(m).name,
-                        marker='^', color=viz.Red, s=45,
-                        edgecolor='none', ax=ax)
-    n_data = (60+48)*2*2 if exp=='exp1' else (60+60)*3*2
-    ax.axhline(y=-np.log(1/2)*n_data, xmin=0, xmax=1,
-                    color='k', lw=1, ls='--')
-    ax.set_xlim([-5, sort_table.shape[0]+15])
-    ax.legend(loc='upper left')
-    ax.spines['left'].set_position(('axes',-0.02))
-    ax.set_xlabel(f'Participant index\n(sorted by the minimum {crs} score over all models)')
-    ax.set_ylabel(crs.upper())
-    fig.tight_layout()
 
 def viz_corr(crs_table, exp, agents, crs='bic', method='mle'):
     
