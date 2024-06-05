@@ -3,7 +3,7 @@
 ## delete the DS.Store
 find . -name ".DS_Store" -delete
 
-declare data_sets=("exp2") #"exp1" "exp2" "exp2-benchmark"
+declare data_sets=("exp2" "exp1") #"exp1" "exp2" "exp2-benchmark"
 declare fit_method='map'
 declare alg='BFGS'
 
@@ -30,7 +30,7 @@ for data_set in "${data_sets[@]}"; do
         # case 1
         "exp1") declare models=("rmPG");; #"rmPG" "caPG" "ecPG" "l2PG"
         # case 2 
-        "exp2") declare models=("LC");; #  "LC" "ACL"   "l2PG_fea"  "caPG_fea"
+        "exp2") declare models=("dcPG_fea");; #  "LC" "ACL"   "l2PG_fea"  "caPG_fea"
     esac 
     for model in "${models[@]}"; do  
         echo Data set=$data_set Model=$model Method=$fit_method Algorithm=$alg
