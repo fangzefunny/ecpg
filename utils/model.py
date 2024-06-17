@@ -323,9 +323,9 @@ class fea_base:
                 pi[s, :] += self.policy(s, a_ava1=a1, a_ava2=a2)   
         return pi  
 
-# -----------------------------------#
-#         Computational models       #
-# -----------------------------------#
+# ------------------------------#
+#         Classic models        #
+# ------------------------------#
 
 class rmPG(base_agent):
     name     = 'RMPG'
@@ -582,10 +582,6 @@ class caPG(ecPG):
 
         self.theta -= self.alpha_psi * gTheta
         self.phi   -= self.alpha_rho * gPhi
-
-# -------------------------------------#
-#         Machine learning tricks      #
-# -------------------------------------#
 
 class l2PG(ecPG):
     name     = 'L2PG'

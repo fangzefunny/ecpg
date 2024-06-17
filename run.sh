@@ -3,7 +3,7 @@
 ## delete the DS.Store
 find . -name ".DS_Store" -delete
 
-declare data_sets=("exp2" "exp1") #"exp1" "exp2" "exp2-benchmark"
+declare data_sets=("exp2") #"exp1" "exp2" "exp2-benchmark"
 declare fit_method='map'
 declare alg='BFGS'
 
@@ -28,14 +28,14 @@ for data_set in "${data_sets[@]}"; do
     ## step 2: fit models to data
     case "$data_set" in
         # case 1
-        "exp1") declare models=("rmPG");; #"rmPG" "caPG" "ecPG" "l2PG"
+        "exp1") declare models=("rmPG" "caPG" "ecPG");; #"rmPG" "caPG" "ecPG" "l2PG"
         # case 2 
-        "exp2") declare models=("dcPG_fea");; #  "LC" "ACL"   "l2PG_fea"  "caPG_fea"
+        "exp2") declare models=("rmPG_fea" "caPG_fea" "ecPG_fea" "LC" "MA" "ACL" "l1PG_fea" "l2PG_fea" "dcPG_fea");; #  "LC" "ACL"   "l2PG_fea"  "caPG_fea"
     esac 
     for model in "${models[@]}"; do  
         echo Data set=$data_set Model=$model Method=$fit_method Algorithm=$alg
-            python m2_fit.py      -d=$data_set -n=$model -s=420 -f=50 -c=50 -m=$fit_method -a=$alg
-            python m3_simulate.py -d=$data_set -n=$model -s=422 -f=10 -c=20 -m=$fit_method -a=$alg
-            #python m4_analyze.py  -d=$data_set -n=$model -m=$fit_method 
+            # python m2_fit.py      -d=$data_set -n=$model -s=420 -f=50 -c=50 -m=$fit_method -a=$alg
+            # python m3_simulate.py -d=$data_set -n=$model -s=422 -f=10 -c=20 -m=$fit_method -a=$alg
+            python m4_analyze.py  -d=$data_set -n=$model -m=$fit_method 
     done
 done

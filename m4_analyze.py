@@ -10,8 +10,8 @@ from utils.env_fn import *
 
 ## pass the hyperparams
 parser = argparse.ArgumentParser(description='Test for argparse')
-parser.add_argument('--data_set',   '-d', help='choose data set', default='exp1_good')
-parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='hier')
+parser.add_argument('--data_set',   '-d', help='choose data set', default='exp1')
+parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='map')
 parser.add_argument('--agent_name', '-n', help='choose agent', default='rdPG')
 parser.add_argument('--params',     '-p', help='params', type=str, default='')
 parser.add_argument('--n_sim',      '-f', help='f simulations', type=int, default=1)
@@ -19,6 +19,7 @@ parser.add_argument('--n_cores',    '-c', help='number of CPU cores used for par
                                             type=int, default=1)
 args = parser.parse_args()
 args.agent = eval(args.agent_name)
+args.env_fn = eval(f'{args.data_set.split("-")[0]}_task')
 
 # define path
 pth = os.path.dirname(os.path.abspath(__file__))
@@ -34,13 +35,7 @@ def evaluate(args):
     with open(fname, 'rb') as handle: data=pickle.load(handle)
 
     # define the subj
-    model = wrapper(args.agent, env_fn=AEtask)
-    n_params = args.agent.n_params
-
-    # if there is input params 
-    if args.params != '': 
-        in_params = [float(i) for i in args.params.split(',')]
-    else: in_params = None 
+    model = wrapper(args.agent, env_fn=args.env_fn)
 
     ## Loop to choose the best model for simulation
     # the last column is the loss, so we ignore that
@@ -50,12 +45,7 @@ def evaluate(args):
         fit_sub_info = pickle.load(handle)
     sim_data = []
     for sub_idx in data.keys(): 
-        if in_params is None:
-            params = fit_sub_info[sub_idx]['param']
-        else:
-            params = in_params
-
-        # synthesize the data and save
+        params = fit_sub_info[sub_idx]['param']
         sim_sample = model.eval(data[sub_idx], params)
         sim_data.append(sim_sample)
     
@@ -95,11 +85,11 @@ if __name__ == '__main__':
     # STEP 1: EVALUATE THE DATA 
     evaluate(args)
 
-    # STEP 2: AGGREGATE THE DATA
-    aggregate(args)
+    # # STEP 2: AGGREGATE THE DATA
+    # aggregate(args)
 
-    # STEP 3: VIZUALIZE QUALITATIVE PROPERTY
-    viz_effects(args)
+    # # STEP 3: VIZUALIZE QUALITATIVE PROPERTY
+    # viz_effects(args)
 
 
    

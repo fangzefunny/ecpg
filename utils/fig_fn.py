@@ -76,7 +76,7 @@ def model_compare_violin(axs, data_set, models):
     viz.violin(ax, data=llh_table, x='BIC',
             y='model', order=models,
             orient='h', errorbar='sd',
-            scatter_size=4,
+            scatter_size=2.8,
             mean_marker_size=8,
             errorlw=3,
             palette=[eval(m).color for m in models]) 
@@ -85,7 +85,7 @@ def model_compare_violin(axs, data_set, models):
     ax.set_xlim([-60, 170])
     ax.set_xticks([-50, 0, 50, 100, 150,])
     ax.set_xticklabels([-50, 0, 50, '', 150])
-    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
     ax.spines['left'].set_position(('axes',-0.05))
     ax.axvline(x=0, ymin=0, ymax=1, ls='--', lw=1.5, color='k')
     ax.set_ylabel('')
@@ -95,7 +95,8 @@ def model_compare_violin(axs, data_set, models):
                 hue='model', hue_order=models,
                 edgecolor=[.2]*3, lw=1.75,
                 palette=[eval(m).color for m in models])
-    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
+    ax.set_xlabel('PXP')
 
 # ----------- Experiment 1 Figures ------------- #
 
@@ -349,8 +350,9 @@ def get_prob_corr_matrix(data_set, models=['rlPG_fea', 'cascade_fea', 'rdPG_fea'
         sel_data = data.query('group=="probe"').reset_index()
         pp = {}
         for j, cond in enumerate(['cons', 'cont', 'conf']):
-            sdata = sel_data.query(f'block_type=="{cond}"')
-            if goodPoor is not None: sdata = sdata.query(f'goodPoor=="good"') 
+            sdata = sel_data.query(f'block_type=="{cond}"').copy()
+            if goodPoor is not None: sdata = sdata.query(f'goodPoor=="good"').copy() 
+            if m!='human': sdata['r'] = sdata['acc']
             gdata = sdata.groupby(by=['sub_id', 'a', 'block_type']).count()['r'].reset_index()
             ptable = gdata.pivot_table(values='r', index='sub_id', columns='a').fillna(0) / (6*s)
             ptable.columns = [0, 1, 2, 3]
@@ -373,30 +375,32 @@ def get_prob_corr_matrix(data_set, models=['rlPG_fea', 'cascade_fea', 'rdPG_fea'
                     ).loc[['cons', 'cont', 'conf'], models]
     return corr_data
 
-def show_prob_corr_mat(ax, corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_fea'], 
+def show_prob_corr_matrix(ax, corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea', 'rmPG_fea'], 
                   font_scale=50,
-                  marker_scale=5500):
-    block_types = ['conf', 'cont', 'cons']
+                  marker_scale=5500,
+                  cbar_scale=.25):
+    models = list(reversed(models))
+    block_types = ['cons', 'cont', 'conf']
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list(
                         'cool_warm',   [viz.new_blue, viz.lRed*.9, viz.new_red])
     norm = plt.Normalize(0, .75)
     f_mean = corr_data.values.mean()*font_scale
-    for i, block_type in enumerate(block_types):
-        for j, model in enumerate(models):
-            color = corr_data.loc[block_type, model]
-            size  = corr_data.loc[block_type, model]*marker_scale
+    for j, block_type in enumerate(block_types):
+        for i, model in enumerate(models):
+            color = corr_data.loc[model, block_type]
+            size  = corr_data.loc[model, block_type]*marker_scale
             ax.scatter(j, i, color=cmap(norm(color)), s=size, marker='s')
             fs = color*font_scale
             f_norm = np.sign(fs - f_mean)*np.abs(fs- f_mean)**(2/3) + f_mean
             ax.text(j-f_norm/65, i-f_norm/200, f'{color:.2f}', fontsize=f_norm)
 
     ax.set_aspect('equal')
-    ax.set_xticks(np.arange(len(models)), minor=False)
-    ax.set_xticklabels([eval(m).name for m in models])
-    ax.set_yticks(np.arange(len(block_types)), minor=False)
-    ax.set_yticklabels(['Conflict', 'Control', 'Consistent'])
-    ax.set_xlim([-.5, len(models)-.5])
-    ax.set_ylim([-.5, len(block_types)-.5])
+    ax.set_yticks(np.arange(len(models)), minor=False)
+    ax.set_yticklabels([eval(m).name for m in models])
+    ax.set_xticks(np.arange(len(block_types)), minor=False)
+    ax.set_xticklabels(['Consistent', 'Control', 'Conflict'])
+    ax.set_ylim([-.5, len(models)-.5])
+    ax.set_xlim([-.5, len(block_types)-.5])
     ax.spines
     gray = [.2]*3
     for pos in ['bottom', 'top', 'left', 'right']: 
@@ -404,8 +408,8 @@ def show_prob_corr_mat(ax, corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_fea'
         ax.spines[pos].set_visible(True)
         ax.spines[pos].set_linewidth(3)
     for xy in ['x', 'y']: ax.tick_params(axis=xy, colors=gray, which='major')
-    plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, shrink=.75)
-
+    plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, shrink=cbar_scale)
+    
 # ----------- Supplementary Figures ------------- #
 
 def test_perform_target(ax, pred_data, tar_data_set, block_type='block', color=viz.Blue):
@@ -660,44 +664,6 @@ def iSZ_reduct(exp, agents, method='mle'):
 
     comb_data = pd.concat(data, axis=0)
     return comb_data
-
-def cmp_rdPG_rdPG0(exp, cond, goodpoor=None):
-    models = ['rdPG', 'rdPG0']
-    models = models if exp=='exp1' else [m+'_fea' for m in models] 
-    diffs = {}
-    def class_err(theta0):
-        nS = 4
-        if exp=='exp1':
-            psi = softmax(np.eye(nS)*theta0, axis=1)
-            return (np.diagonal(psi)).mean()
-        else:
-            fn = AEtask(cond).embed
-            F = np.vstack([fn(s) for s in range(nS)])
-            R = F * theta0
-            psi = softmax(np.vstack([(R[r] * R).sum(1) for r in range(nS)]), axis=1)
-            return (np.diagonal(psi)).mean()
-
-    for m in models:
-        datum = pd.read_csv(f'analyses/{exp}/{m}/{exp}-eval.csv')
-        datum = datum.query(f'block_type=="{cond}"')
-        if goodpoor is not None: datum = datum.query(f'goodPoor=="{goodpoor}"')
-        i_init = datum.query('stage=="train" & trial==0').groupby(by='sub_id')['i_SZ'].mean()
-        i_end  = datum.query('stage=="train" & trial==59').groupby(by='sub_id')['i_SZ'].mean()
-        diff = (i_end - i_init).reset_index().rename(columns={'i_SZ': m})
-        # calculate the initial classification accuracy        
-        datum = datum.groupby(by=['sub_id'])[['humanRew', 'theta0']
-                ].mean().reset_index().rename(columns={'nll': m})
-        err = datum['theta0'].apply(class_err)
-        # calculate the generalization accuracy    
-        datum = pd.read_csv(f'analyses/{exp}/{m}/{exp}-base.csv')
-        datum = datum.query(f'block_type=="{cond}"')
-        if goodpoor is not None: datum = datum.query(f'goodPoor=="{goodpoor}"')
-        acc = datum.query('group=="untrained"').groupby(by='sub_id')['acc'].mean()
-        diff[f'{m}_gen']  = acc.values
-        diff[f'{m}_acc0'] = err
-        diffs[m] = diff 
-    data = diffs[models[0]].merge(diffs[models[1]], on='sub_id')
-    return data
 
 # ------ Quantitative Table -------- #
 
