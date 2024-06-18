@@ -10,9 +10,9 @@ from utils.env_fn import *
 
 ## pass the hyperparams
 parser = argparse.ArgumentParser(description='Test for argparse')
-parser.add_argument('--data_set',   '-d', help='choose data set', default='exp1')
+parser.add_argument('--data_set',   '-d', help='choose data set', default='exp2')
 parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='map')
-parser.add_argument('--agent_name', '-n', help='choose agent', default='rdPG')
+parser.add_argument('--agent_name', '-n', help='choose agent', default='caPG_fea')
 parser.add_argument('--params',     '-p', help='params', type=str, default='')
 parser.add_argument('--n_sim',      '-f', help='f simulations', type=int, default=1)
 parser.add_argument('--n_cores',    '-c', help='number of CPU cores used for parallel computing', 

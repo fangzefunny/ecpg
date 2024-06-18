@@ -769,12 +769,16 @@ class ecPG_fea(ecPG_fea_sim):
 class caPG_fea(caPG):
     name     = 'fCAPG'
 
+    def _learn_pZ(self): ecPG_fea_sim._learn_pZ(self)
+
     def _init_agent(self): ecPG_fea_sim._init_agent(self)
      
     def get_attn(self): return ecPG_fea_sim.get_attn(self)
 
 class l2PG_fea(l2PG):
     name     = 'fL2PG'
+
+    def _learn_pZ(self): ecPG_fea_sim._learn_pZ(self)
 
     def _init_agent(self): ecPG_fea_sim._init_agent(self)
      
