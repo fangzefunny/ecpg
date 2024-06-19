@@ -179,7 +179,9 @@ class exp2_task(exp1_task):
     dims = [5, 5, 5]
     dim_name = ['shape', 'color', 'appendage'] 
     voi = ['a', 'acc', 'r']
+    n_cons_train = 6*10
     n_cont_train = 6*10
+    n_conf_train = 6*10
     block_types = ['cont', 'cons', 'conf']
 
     def __init__(self, block_type='cont'):

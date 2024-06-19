@@ -11,9 +11,9 @@ from utils.env_fn import *
 
 ## pass the hyperparams
 parser = argparse.ArgumentParser(description='Test for argparse')
-parser.add_argument('--data_set',   '-d', help='which_data', type = str, default='exp1')
+parser.add_argument('--data_set',   '-d', help='which_data', type = str, default='exp2')
 parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='mle')
-parser.add_argument('--agent_name', '-n', help='choose agent', default='ecPG_sim')
+parser.add_argument('--agent_name', '-n', help='choose agent', default='ecPG_fea_sim')
 parser.add_argument('--n_cores',    '-c', help='number of CPU cores used for parallel computing', 
                                             type=int, default=1)
 parser.add_argument('--seed',       '-s', help='random seed', type=int, default=2420)
@@ -21,8 +21,8 @@ parser.add_argument('--params',     '-p', help='params', type=str, default='[30,
 parser.add_argument('--sub_id',    '-i', help='sub id', type=str, default='nan')
 args = parser.parse_args()
 args.agent = eval(args.agent_name)
+args.env_fn = eval(f'{args.data_set.split("-")[0]}_task')
 args.group = 'group' if args.method=='hier' else 'ind'
-args.env_fn = eval(f'AEtask')
 
 # find the current path
 pth = os.path.dirname(os.path.abspath(__file__))
@@ -56,7 +56,7 @@ def sim_grid(args, n_sample_per_param=20):
             
 def sim_param(args):
     if args.sub_id=='nan': 
-        kwargs = {n: v for n, v in zip(args.agent.p_name, eval(args.params))}
+        kwargs = {n: v for n, v in zip(args.agent.p_names, eval(args.params))}
     else:
         kwargs = {}
     block_types = ['cont'] if args.data_set=='exp1' \
@@ -79,9 +79,10 @@ def sim_subj_paral(pool, args, block_type,
     # prepare parameters: if subject parameters are passed
     # use subject's parameters
     if args.sub_id == 'nan':
-        rparams  = [kwargs[n] for n in model.agent.p_name]
-        param_info = '-'.join([f'{n}={p}' for n, p in zip(model.agent.p_print, rparams)])
-        params = [fn(p) for p, fn in zip(rparams, model.agent.p_links)]
+        rparams  = [kwargs[n] for n in model.agent.p_names]
+        param_info = '-'.join([f'{n}={p}' for n, p in zip(model.agent.p_names, rparams)])
+        # conver to real parameter space 
+        params = [fn(p) for p, fn in zip(rparams, model.agent.p_links)] 
         task = None 
     else:
         fname = f'{pth}/fits/{args.data_set}/fit_sub_info-{args.agent_name}'
