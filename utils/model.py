@@ -319,8 +319,10 @@ class fea_base:
         pi = np.zeros([n, self.nA])
         for s in range(n):
             for act in acts:
-                a1, a2 = act
-                pi[s, :] += self.policy(s, a_ava1=a1, a_ava2=a2)   
+                a_ava1, a_ava2 = act
+                f = self.s2f(s)
+                pi[s, :] += self.policy(f, s=s,
+                            a_ava=[a_ava1, a_ava2])   
         return pi  
 
 # ------------------------------#
@@ -719,6 +721,7 @@ class rmPG_fea(rmPG):
 class ecPG_fea_sim(ecPG_sim):
     '''Feature efficient coding policy gradient (analytical)
     '''
+    insights = ['enc', 'dec', 'pol', 'attn']
     name     = 'fECPG'
 
     def _init_agent(self):
@@ -738,16 +741,16 @@ class ecPG_fea_sim(ecPG_sim):
     def get_attn(self):
         '''Perturbation-based attention
         '''
-        attn = np.zeros([3])
-        for d in range(3): 
+        attn = np.zeros([self.nD])
+        for d in range(self.nD): 
             attn_d = 0 
             for s in range(self.nS):
-                f_orig = self.embed(s)
+                f_orig = self.embed(self.s2f(s))
                 pi_orig = softmax(f_orig@self.theta, axis=1)
-                nD = f_orig.reshape([3, -1]).shape[1]
+                nD = f_orig.reshape([self.nD, -1]).shape[1]
                 pi_pert = [] 
                 for i in range(nD):
-                    f_pert = f_orig.reshape([3, -1]).copy()
+                    f_pert = f_orig.reshape([self.nD, -1]).copy()
                     f_pert[d, :] = np.eye(nD)[i, :]
                     f_pert = f_pert.reshape([1, -1])
                     pi_pert.append(softmax(f_pert@self.theta, axis=1).reshape([-1]))
@@ -884,7 +887,7 @@ class LC(base_agent):
         #             = \sum_z p(Z, s)p(r=1|Z, A)
         # nZx1 * nZx1 * nZxnA = nZ*nA
         f_Zs = (self.p_Z*self.p_s1Z)
-        self.p_Zs = f_Zs / f_Zs.sum()
+        self.p_Zs = f_Zs / (f_Zs+eps_).sum()
         Q_sA = (self.p_Zs*p_r1ZA).sum(0)
         # add mask
         m_A  = mask_fn(self.nA, kwargs['a_ava'])
@@ -921,7 +924,7 @@ class LC(base_agent):
             # p(Z|s, a, r) ∝ p(Z, s, r| a)
             #              = p(Z, s)p(r|Z, a)
             f_Z1sar = self.p_Zs.reshape([-1])*p_r1Za
-            p_Z1sar = f_Z1sar / f_Z1sar.sum()
+            p_Z1sar = f_Z1sar / (f_Z1sar+eps_).sum()
             # M-step: W = W + ηδ
             # δ = p(z|fs, a, r)*(r - Q(s,a)): nZ,
             delta = p_Z1sar*(r - q_Za)
