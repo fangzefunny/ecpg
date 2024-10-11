@@ -10,8 +10,8 @@ class exp1_task:
     nS = len(stimuli)
     nA = 4
     nProbe = 0
-    nD = nS
-    nF = 1
+    nD = 1
+    nF = 4
     nI = 4
     dims = [1, 1, 1, 1]
     dim_name = ['d1', 'd2', 'd3', 'd4'] 

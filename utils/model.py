@@ -906,7 +906,7 @@ class LC(base_agent):
         f_f1Z = (cat_zH.T@np.vstack(self.fHistory)
             ).reshape([-1, self.nD, self.nF])+self.p
         self.p_f1Z = f_f1Z / f_f1Z.sum(2, keepdims=True) 
-        assert (np.abs(self.p_f1Z.sum(axis=(1,2))-3)<1e-5).all(), 'p(f|Z) does not sum to 3'
+        assert (np.abs(self.p_f1Z.sum(axis=(1,2))-self.nD)<1e-5).all(), f'p(f|Z) does not sum to {self.nD}'
 
     def _learn_Q_ZA(self):
         # get data 
@@ -1070,7 +1070,7 @@ class ACL(base_agent):
                 lambda x: np.log(x+eps_),]
     n_params = len(p_names)
     voi = []
-    insights = ['pol', 'attn']
+    insights = ['q_attn', 'phi_attn']
     color = np.array([118, 200, 147]) / 255
         
     def load_params(self, params):
@@ -1085,6 +1085,7 @@ class ACL(base_agent):
     def _init_agent(self):
         self.q_choice = np.zeros([self.nI, self.nA]) # the Q for the choice model 
         self.q_attn   = np.zeros([self.nI, self.nA]) # the Q for the attn model
+        self.phi      = np.ones([self.nD]) / self.nD
 
     def get_phi(self):
         # the maximum feature value in each dimension 
@@ -1134,3 +1135,9 @@ class ACL(base_agent):
         self.q_attn += self.eps*(0 - self.q_attn) 
         # update q table 
         self.q_attn[f>0, a] = q_selected
+
+    def get_q_attn(self):
+        return self.q_attn.copy()
+    
+    def get_phi_attn(self):
+        return self.phi.copy()

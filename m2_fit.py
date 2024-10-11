@@ -15,7 +15,7 @@ parser.add_argument('--n_fit',      '-f', help='fit times', type = int, default=
 parser.add_argument('--data_set',   '-d', help='which_data', type = str, default='exp1')
 parser.add_argument('--method',     '-m', help='methods, mle or map', type = str, default='map')
 parser.add_argument('--algorithm',  '-a', help='fitting algorithm', type = str, default='BFGS')
-parser.add_argument('--agent_name', '-n', help='choose agent', default='dcPG')
+parser.add_argument('--agent_name', '-n', help='choose agent', default='LC')
 parser.add_argument('--n_cores',    '-c', help='number of CPU cores used for parallel computing', 
                                             type=int, default=1)
 parser.add_argument('--seed',       '-s', help='random seed', type=int, default=420)
