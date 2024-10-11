@@ -1044,6 +1044,39 @@ class MA(base_agent):
         self.T.append(config)
         self.T_table[int(s), a_ava] = 1
 
+class MA2(MA):
+    '''Memory association model
+
+    Created based on reviewers' comments
+    '''
+    name     = 'MA'
+    p_names  = ['alpha_Q', 'alpha_assoc', 'beta_assoc', 'beta', 's']
+    p_bnds   = [(0, np.log(1000))]*len(p_names)
+    p_pbnds  = [(-3, 3), (-3, 3), (-3, 10), (-3, 10), (-3, 10)]    
+    p_priors = [uniform(0, 1), uniform(0, 1),
+                halfnorm(0, 40), halfnorm(0, 40), halfnorm(0, 40)]
+    p_trans  = [lambda x: 1/(1+clip_exp(-x))]*2 +\
+                [lambda x: clip_exp(x)]*3
+    p_links  = [lambda x: np.log(x+eps_)-np.log(1-x+eps_)]*2+\
+                [lambda x: np.log(x+eps_)]*3
+    n_params = len(p_names)
+     
+    def load_params(self, params):
+        # from gaussian space to actual space  
+        params = [f(p) for f, p in zip(self.p_trans, params)]
+        self.alpha_Q     = params[0] # the value learning rate
+        self.alpha_assoc = params[1] # the association learning rate
+        self.beta_assoc  = params[2] # the association inverse temperature
+        self.beta        = params[3] # the policy inverse temperature
+        self.s           = params[4] # the scale variable for k
+
+    def _learn_assoc(self):
+        k = self.F@self.F.T
+        q_SA = (self.F@self.q_FA)*self.T_table
+        w_tar = q_SA@q_SA.T 
+        for s in range(self.nS+self.nProbe): w_tar[s, s] = 1
+        self.w_assoc += self.alpha_assoc*(1+self.s*k)*(w_tar - self.w_assoc)
+
 class ACL(base_agent):
     '''ACL model with value attention
 
