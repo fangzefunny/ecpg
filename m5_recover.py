@@ -102,7 +102,6 @@ def syn_data_model_recover(task_data, param, sub_id, seed, n_samp=10):
 
     return sub_id, sim_data
 
-
 if __name__ == '__main__':
 
     model_recover(args)
