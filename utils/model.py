@@ -806,6 +806,82 @@ class dcPG_fea(l2PG_fea):
 
     def _learn_enc_dec(self): dcPG._learn_enc_dec(self)
 
+class rndPG_fea(caPG_fea):
+    name     = 'RNDPG'
+    p_names  = ['alpha_psi', 'alpha_rho', 'lambda']  
+    p_bnds   = [(-1000, 1000)]*len(p_names)
+    p_pbnds  = [(-2, 2.5), (-2, 2.5), (-2, 2.5)]
+    p_poi    = p_names
+    p_priors = [halfnorm(0, 40)]*len(p_names)
+    p_trans  = [lambda x: clip_exp(x)]*len(p_names)
+    p_links  = [lambda x: np.log(x+eps_)]*len(p_names)
+    n_params = len(p_names)
+    voi      = ['i_SZ']
+    insights = ['enc', 'dec', 'pol']
+    color    = viz.r2
+    marker   = 'o'
+    size     = 30
+    alpha    = .8
+
+    def load_params(self, params):
+        params = [f(p) for f, p in zip(self.p_trans, params)]
+        self.alpha_psi  = params[0]
+        self.alpha_rho  = params[1]
+        self.lmbda      = params[2]
+        self.n_samples  = 30
+        self.b          = 1/2
+
+    def policy(self, fstr, **kwargs):
+        f = self.embed(fstr)
+        # Use map to accelerate the computation of pi_ensemble
+        def compute_pi(noise):
+            p_Z1s = softmax(f@(self.theta+noise), axis=1)
+            m_A   = mask_fn(self.nA, kwargs['a_ava'])
+            p_A1Z = softmax(self.phi-(1-m_A)*max_, axis=1)
+            pi = (p_Z1s@p_A1Z).reshape([-1])
+            pi /= pi.sum()
+            return pi, p_Z1s, p_A1Z
+        pi_ensemble = []
+        self.p_Z1s_ensemble = []
+        self.p_A1Z_ensemble = []
+        for _ in range(self.n_samples):
+            pi, p_Z1s, p_A1Z = compute_pi(self.lmbda * np.random.randn(*self.theta.shape))
+            pi_ensemble.append(pi)
+            self.p_Z1s_ensemble.append(p_Z1s)
+            self.p_A1Z_ensemble.append(p_A1Z)
+        return np.mean(pi_ensemble, axis=0)
+        
+    def _learn_enc_dec(self):
+
+        # get data 
+        fstr, a, r = self.mem.sample('f', 'a', 'r')
+        f = self.embed(fstr)
+        
+        # Use map to accelerate the loop
+        def compute_grad(p_Z1s, p_A1Z):
+
+            p_a1Z = p_A1Z[:, [a]]
+            u = np.array([r - self.b])[:, np.newaxis] 
+            
+            # backward
+            sTheta = (u*p_a1Z.T)
+            gTheta = -f.T@(p_Z1s*(np.ones([1, self.nZ])*
+                        sTheta - p_Z1s@sTheta.T))
+            
+            sPhi = u*p_Z1s.T
+            gPhi = -p_a1Z*(np.eye(self.nA)[[a]] - p_A1Z)*sPhi
+            
+            return gTheta, gPhi
+
+        results = list(map(lambda x: compute_grad(*x), zip(self.p_Z1s_ensemble, self.p_A1Z_ensemble)))
+        
+        grad_theta = np.mean([res[0] for res in results], axis=0)
+        grad_phi = np.mean([res[1] for res in results], axis=0)
+
+        self.theta -= self.alpha_psi * grad_theta
+        self.phi   -= self.alpha_rho * grad_phi
+
+
 # ----------------------------------------#
 #      Representation learning models     #
 # ----------------------------------------# 
