@@ -42,15 +42,12 @@ for data_set in "${data_sets[@]}"; do
 
     ## step 3: model recovery for validation
     if [ "$data_set" = "exp2" ]; then
-        models=("ecPG_fea" "l2PG_fea") # "rmPG_fea" "caPG_fea" "LC" "MA" "ACL" "l1PG_fea" "l2PG_fea" "dcPG_fea"
+        models=("rmPG_fea" "caPG_fea") # 
+        other_models=("ecPG_fea" "l2PG_fea" "rmPG_fea" "caPG_fea" "LC" "MA" "ACL" "l1PG_fea")
         for model in "${models[@]}"; do
             echo Model recovery... for $model
-            python m5_recover.py -d "exp2" -n $model -m $fit_method -a $alg -o "${models[@]}" -c 10 -s 423 
+            python m5_recover.py -d "exp2" -n $model -m $fit_method -a $alg -o "${other_models[@]}" -c 10 -s 423 
         done
     fi
 
 done
-
-
-
-
