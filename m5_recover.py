@@ -5,6 +5,8 @@ import datetime
 import numpy as np
 import pandas as pd
 import subprocess
+from copy import deepcopy
+
 
 from utils.parallel import get_pool 
 from utils.model import *
@@ -44,7 +46,7 @@ def model_recover(args, n_sub=40, n_samp=10):
     ## STEP 2: REFIT THE OTHER MODEL TO THE SYTHESIZE DATA 
     for agent_name in args.other_agents:
         cmand = ['python', 'm2_fit.py', f'-d={args.data_set}-{args.agent_name}',
-                f'-n={agent_name}', '-s=420', '-f=40', '-c=40', 
+                f'-n={agent_name}', '-s=420', '-f=30', '-c=30', 
                 f'-m={args.method}', f'-a={args.algorithm}']
         subprocess.run(cmand)
 
@@ -71,8 +73,9 @@ def syn_data_model_recover_paral(pool, data, args, n_sub=30, n_samp=10):
 
     syn_data = {}
     for _, p in enumerate(res):
-        sub_id, sim_data = p.get() 
-        syn_data[sub_id] = sim_data 
+        sim_data_all = p.get() 
+        for sub_id in sim_data_all.keys():
+            syn_data[sub_id] = sim_data_all[sub_id]
 
     # save for fit 
     with open(f'{pth}/data/{args.data_set}-{args.agent_name}.pkl', 'wb')as handle:
@@ -86,21 +89,23 @@ def syn_data_model_recover(task_data, param, sub_id, seed, n_samp=10):
     model = wrapper(args.agent, args.env_fn)
 
     # synthesize the data and save
-    sim_data = {} 
+    
     task_lst = rng.choice(list(task_data.keys()), size=n_samp, replace=False)
     
-    i = 0
-    for task_id in task_lst:
+    sim_data_all = {}
+    for i, task_id in enumerate(task_lst):
+        sample_id = f'{sub_id}-{i}'
+        sim_data = {} 
         block_ind = task_data[task_id]
         for block_id in block_ind:
             task = task_data[task_id][block_id]
             sim_sample = model.sim({i: task}, param, rng=rng)
             sim_sample = sim_sample.drop(columns=model.agent.voi)
-            sim_sample['block_id'] = i
-            sim_data[i] = sim_sample
-            i += 1     
+            sim_sample['sample_id'] = sample_id
+            sim_data[block_id] = sim_sample  
+        sim_data_all[sample_id] = deepcopy(sim_data)
 
-    return sub_id, sim_data
+    return sim_data_all
 
 if __name__ == '__main__':
 
