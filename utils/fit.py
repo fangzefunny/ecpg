@@ -267,7 +267,7 @@ def fit_parallel(pool, loss_fn, data, bnds, pbnds, p_name,
             opt_val = -res['log_post']
             opt_res = res
     n_low = (np.abs(np.array(losses)-opt_val)<tol).sum()
-    print(f'\tNum of lowest loss: {n_low}/{len(losses)}')
+    #print(f'\tNum of lowest loss: {n_low}/{len(losses)}')
             
     return opt_res 
 
