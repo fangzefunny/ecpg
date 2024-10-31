@@ -715,7 +715,7 @@ class rndPG(caPG):
     n_params = len(p_names)
     voi      = ['i_SZ']
     insights = ['enc', 'dec', 'pol']
-    color    = viz.r2
+    color    = np.array([155, 150, 192]) / 255
     marker   = 'o'
     size     = 30
     alpha    = .8
