@@ -119,6 +119,14 @@ After downloading or running the code to obtain all prerequisite folders, please
 |- simulations
 |- visualization
 |- utils
+|- m0_preprocess.py
+|- m1_predict.py
+|- m2_fit.py
+|- m3_simulate.py
+|- m4_analyze.py
+|- m5_recover.py
+|- run.sh
+|- requirements.txt
 ```
 
 Run `visualization/Fig#` in the visaulization folder to produce the figures you preferred.
