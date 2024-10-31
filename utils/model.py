@@ -328,8 +328,8 @@ class fea_base:
 #         Classic models        #
 # ------------------------------#
 
-class rmPG(base_agent):
-    name     = 'RMPG'
+class rlPG(base_agent):
+    name     = 'RLPG'
     p_names  = ['alpha'] 
     p_bnds   = [(0, 1000)]
     p_pbnds  = [(-2, 2)]
@@ -782,8 +782,8 @@ class rndPG(caPG):
 #      Feature-based models     #
 # ------------------------------# 
 
-class rmPG_fea(rmPG):
-    name     = 'fRMPG'
+class rlPG_fea(rlPG):
+    name     = 'fRLPG'
     voi      = []
     insights = ['pol']
 

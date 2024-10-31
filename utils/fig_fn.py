@@ -69,8 +69,8 @@ def model_compare_per_participant(ax, data_set, models, n_data=None, method='mle
     ax.set_xlabel(f'Participant index (sorted by the minimum {cr} score over all models)')
     ax.set_ylabel(cr.upper())
 
-def model_compare_violin(axs, data_set, models):
-    llh_table, pxp = get_llh_score(data_set, models, method='map', 
+def model_compare_violin(axs, data_set, models, method='map'):
+    llh_table, pxp = get_llh_score(data_set, models, method=method, 
                                 if_bms=True, use_bic=True)
     ax = axs[0]
     viz.violin(ax, data=llh_table, x='BIC',
@@ -100,10 +100,10 @@ def model_compare_violin(axs, data_set, models):
 
 # ----------- Experiment 1 Figures ------------- #
 
-def generalize_exp1(ax, data_set, models):
+def generalize_exp1(ax, data_set, models, method='map'):
     data = [] 
     for m in models:
-        datum = get_sim_data(data_set, m)
+        datum = get_sim_data(data_set, m, method=method)
         datum['group'] = datum['group'].map({
                 'control': 'trained', 
                 'trained': 'trained',

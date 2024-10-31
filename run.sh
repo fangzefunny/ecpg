@@ -10,8 +10,8 @@ declare alg='BFGS'
 for data_set in "${data_sets[@]}"; do
 
     case "$data_set" in
-        "exp1") models=("rmPG" "caPG" "ecPG" "LC" "MA" "l1PG" "l2PG" "rndPG" "dcPG");;
-        "exp2") models=("rmPG_fea" "caPG_fea" "ecPG_fea" "LC" "MA" "ACL" "l1PG_fea" "l2PG_fea" "rndPG_fea" "dcPG_fea");;
+        "exp1") models=("rlPG" "caPG" "ecPG" "LC" "MA" "l1PG" "l2PG" "rndPG" "dcPG");;
+        "exp2") models=("rlPG_fea" "caPG_fea" "ecPG_fea" "LC" "MA" "ACL" "l1PG_fea" "l2PG_fea" "rndPG_fea" "dcPG_fea");;
     esac
  
     ## step 0: preprocess the data  
@@ -38,7 +38,7 @@ for data_set in "${data_sets[@]}"; do
 
     # step 3: model recovery for validation
     if [ "$data_set" = "exp2" ]; then
-        models=("rmPG_fea" "caPG_fea" "ecPG_fea" "LC" "MA" "ACL" "l1PG_fea" "l2PG_fea") 
+        models=("rlPG_fea" "caPG_fea" "ecPG_fea" "LC" "MA" "ACL" "l1PG_fea" "l2PG_fea") 
         for model in "${models[@]}"; do
             echo Model recovery... for $model
             python m5_recover.py -d "exp2" -n $model -m $fit_method -a $alg -o "${models[@]}" -c 10 -s 423 
