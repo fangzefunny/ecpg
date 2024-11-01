@@ -725,7 +725,7 @@ class rndPG(caPG):
         self.alpha_psi  = params[0]
         self.alpha_rho  = params[1]
         self.lmbda      = params[2]
-        self.n_samples  = 30
+        self.n_samples  = 50
         self.b          = 1/2
 
     def policy(self, fstr, **kwargs):

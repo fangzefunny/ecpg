@@ -46,7 +46,7 @@ def model_recover(args, n_sub=40, n_samp=10):
     ## STEP 2: REFIT THE OTHER MODEL TO THE SYTHESIZE DATA 
     for agent_name in args.other_agents:
         cmand = ['python', 'm2_fit.py', f'-d={args.data_set}-{args.agent_name}',
-                f'-n={agent_name}', '-s=420', '-f=30', '-c=30', 
+                f'-n={agent_name}', '-s=420', '-f=50', '-c=50', 
                 f'-m={args.method}', f'-a={args.algorithm}']
         subprocess.run(cmand)
 
