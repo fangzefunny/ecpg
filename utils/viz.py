@@ -81,10 +81,9 @@ class viz:
 
     @staticmethod
     def get_style(): 
-        '''The style of our figures'''
-        sns.set_context("talk")
-        #sns.set_style("ticks", {'axes.grid': False})
-        #mpl.rcParams["font.family"]        = "Arial"
+        # Larger scale for plots in notebooks
+        sns.set_context('notebook')
+        sns.set_style("ticks", {'axes.grid': False})
         mpl.rcParams['pdf.fonttype']       = 42
         mpl.rcParams['axes.spines.right']  = False
         mpl.rcParams['axes.spines.top']    = False

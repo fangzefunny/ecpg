@@ -705,7 +705,7 @@ class dcPG(l2PG):
 
 class rndPG(caPG):
     name     = 'RNDPG'
-    p_names  = ['alpha_psi', 'alpha_rho', 'lambda']  
+    p_names  = ['alpha_psi', 'alpha_rho', 'lmbda']  
     p_bnds   = [(-1000, 1000)]*len(p_names)
     p_pbnds  = [(-2, 2.5), (-2, 2.5), (-2, 2.5)]
     p_poi    = p_names

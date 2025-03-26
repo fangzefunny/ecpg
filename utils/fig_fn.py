@@ -65,7 +65,7 @@ def model_compare_per_participant(ax, data_set, models, n_data=None, method='mle
     ax.set_xlim([-2, sort_table.shape[0]+5])
     ax.legend(loc='upper left')
     ax.spines['left'].set_position(('axes',-0.02))
-    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
     ax.set_xlabel(f'Participant index (sorted by the minimum {cr} score over all models)')
     ax.set_ylabel(cr.upper())
 
@@ -127,7 +127,7 @@ def generalize_exp1(ax, data_set, models, method='map'):
             errorlw=2.75,
             mean_marker_size=8.5)
     ax.spines['left'].set_position(('axes',-0.08))
-    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.75)
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
     ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
     ax.set_box_aspect(.8)
     ax.set_xticks([0, 1])
@@ -176,7 +176,7 @@ def learning_curve_exp1(ax, data, color=viz.new_blue, with_target_data_set=False
                     err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
     ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1.5)
     ax.spines['left'].set_position(('axes',-0.05))
-    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.75)
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
     ax.set_box_aspect(.47)
     ax.set_xticks([0, 5, 10, 15])
     ax.set_xticklabels([1, 6, 11, 16])
@@ -216,9 +216,9 @@ def generalize_exp2(axs, data_set, models, method='mle'):
             scatter_size=3.5,
             err_capsize=.15,
             errorlw=2.75,
-            mean_marker_size=8)
+            mean_marker_size=6.5)
         ax.spines['left'].set_position(('axes',-0.04))
-        for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+        for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
         ax.axhline(y=.5, xmin=0, xmax=1, ls='--', lw=2, color=[.2]*3)
         ax.set_box_aspect(.75)
         ax.set_xticks([0, 1])
@@ -242,11 +242,11 @@ def learning_curve_exp2(ax, data, with_target_data_set=False, human=False):
         # visualize
         sns.lineplot(x='tps', y=yvar, data=sel_data, 
                     hue='block_type', hue_order=['cons', 'cont', 'conf'],
-                    err_style='bars', #errorbar="se", 
+                    err_style='bars', errorbar="se", 
                     palette=viz.Pal_type,
                     legend=False,
                     lw=2.5,
-                    err_kws={'capsize': 3.5, 'elinewidth': 2.5, 'capthick': 2.5},
+                    err_kws={'capsize': 3, 'elinewidth': 2, 'capthick': 2},
                     ax=ax)
     else:
         # get target
@@ -273,10 +273,10 @@ def learning_curve_exp2(ax, data, with_target_data_set=False, human=False):
                     hue='block_type', hue_order=['cons', 'cont', 'conf'],
                     err_style='bars', #errorbar="se", 
                     palette=viz.Pal_type,
-                    err_kws={'capsize': 4.5, 'elinewidth': 2.5, 'capthick': 2.5})
+                    err_kws={'capsize': 3, 'elinewidth': 2, 'capthick': 2})
     ax.axvline(x=9.5, ymax=0, ymin=1, ls='--', color='k', lw=1)
     #ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
-    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(3)
+    for pos in ['bottom', 'left']: ax.spines[pos].set_linewidth(2.5)
     ax.spines['left'].set_position(('axes',-0.05))
     ax.set_box_aspect(.6)
     ax.set_xticks([0, 5, 10, 15])
@@ -365,7 +365,8 @@ def get_prob_corr_matrix(data_set, models=['rlPG_fea', 'cascade_fea', 'rdPG_fea'
         for m in models:
             x = p_tables[m][cond][:, 0::2].reshape([-1])
             corr_lm = pg.corr(x, y, method='spearman')
-            #print(corr_lm)
+            print(f'\n{m}-{cond}:')
+            print(corr_lm)
             r = corr_lm["r"][0]
             corr_data['corr'].append(r)
             corr_data['agent'].append(m)
@@ -406,7 +407,7 @@ def show_prob_corr_matrix(ax, corr_data, models=['ecPG_fea', 'l2PG_fea', 'caPG_f
     for pos in ['bottom', 'top', 'left', 'right']: 
         ax.spines[pos].set_color(gray)
         ax.spines[pos].set_visible(True)
-        ax.spines[pos].set_linewidth(3)
+        ax.spines[pos].set_linewidth(2.5)
     for xy in ['x', 'y']: ax.tick_params(axis=xy, colors=gray, which='major')
     plt.colorbar(plt.cm.ScalarMappable(norm=norm, cmap=cmap), ax=ax, shrink=cbar_scale)
     
@@ -1286,7 +1287,7 @@ def sim_Insight(voi, sim_data, tar, trials):
     if tar == 'enc': ass_val = [get_assoc(target[i]) for i in range(len(trials))] 
     
     nr, nc = 1, len(trials)
-    fig, axs = plt.subplots(nr, nc, figsize=(nc*2.8, nr*3.1), 
+    fig, axs = plt.subplots(nr, nc, figsize=(nc*1.5, nr*2), 
                             sharex=True, sharey=True)
     cbar_ax = fig.add_axes([.95, .23, .01, .57])
     for idx in range(nc):
@@ -1301,10 +1302,10 @@ def sim_Insight(voi, sim_data, tar, trials):
             #ax.set_title(f"t={t}\nAssoc. = {ass_val[idx]:.3f}")
         else:
             ax.set_title(f't={t}')
-        ax.axhline(y=0, color='k',lw=5)
-        ax.axhline(y=target[idx].shape[1], color='k',lw=5)
-        ax.axvline(x=0, color='k',lw=5)
-        ax.axvline(x=target[idx].shape[0], color='k',lw=5)
+        ax.axhline(y=0, color='k',lw=3)
+        ax.axhline(y=target[idx].shape[1], color='k',lw=3)
+        ax.axvline(x=0, color='k',lw=3)
+        ax.axvline(x=target[idx].shape[0], color='k',lw=3)
         ax.set_xticks([.5, 1.5, 2.5, 3.5])
         ax.set_xticklabels(xt)
         ax.xaxis.set_tick_params(length=0)
@@ -1328,16 +1329,16 @@ def trainInfo():
 
     xt, yt = [r'$a_1$', r'$a_2$', r'$a_3$', r'$a_4$'],  [r"$x$ ", r"$x'$", r"$y$ ", r"$y'$"]
     
-    fig, axs = plt.subplots(2, 1, figsize=(3, 2*3.1))
+    fig, axs = plt.subplots(2, 1, figsize=(3, 1.5*2))
     for i, mat in enumerate([train_mat, test_mat]):
         ax = axs[i]
         sns.heatmap(mat, square=True, lw=.5, 
                         cmap=viz.RedsMap, vmin=0, vmax=1, 
                         cbar_kws={"shrink": .6}, ax=ax)
-        ax.axhline(y=0, color='k',linewidth=5)
-        ax.axhline(y=mat.shape[1], color='k',linewidth=5)
-        ax.axvline(x=0, color='k',linewidth=5)
-        ax.axvline(x=mat.shape[0], color='k',linewidth=5)
+        ax.axhline(y=0, color='k',linewidth=3)
+        ax.axhline(y=mat.shape[1], color='k',linewidth=3)
+        ax.axvline(x=0, color='k',linewidth=3)
+        ax.axvline(x=mat.shape[0], color='k',linewidth=3)
         ax.set_xticks([.5, 1.5, 2.5, 3.5])
         ax.set_xticklabels(xt)
         ax.xaxis.set_tick_params(length=0)

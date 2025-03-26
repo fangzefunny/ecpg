@@ -6,15 +6,17 @@ def t_test(x_data, y_data, paired=False, title=''):
     t   = df.loc[:, 'T'].values[0]
     pval = df.loc[:, 'p-val'].values[0]
     cohen_d = df.loc[:, 'cohen-d'].values[0]
+    ci = df.loc[:, 'CI95%'].values[0]
     pair_str = '-paired' if paired==True else ''
-    print(f'{title} \tt{pair_str}({dof:.3f})={t:.3f}, p={pval:.3f}, cohen-d={cohen_d:.3f}')
+    print(f'{title} \tt{pair_str}({dof:.3f})={t:.3f}, p={pval:.3f}, cohen-d={cohen_d:.3f}, 95% CI={ci}')
 
 def corr(x_data, y_data, title=''):
     df = pg.corr(x_data, y_data)
     n = df.loc[:, 'n'].values[0]
     r   = df.loc[:, 'r'].values[0]
     pval = df.loc[:, 'p-val'].values[0]
-    print(f'{title} \tr({n})={r:.3f}, p={pval:.3f}')
+    ci = df.loc[:, 'CI95%'].values[0]
+    print(f'{title} \tr({n})={r:.3f}, p={pval:.3f}, 95% CI={ci}')
 
 def anova(dv, between, data, all_table=False):
     df = pg.anova(dv=dv, between=between, data=data).rename(columns={'p-unc': 'punc'})
