@@ -5,6 +5,8 @@ This Github repository will also be stored within an Open Science Framework (OSF
 
 Here is the guideline of reproducing the main figures in the paper. 
 
+Note: the models' implementations are in `utils/models`
+
 # Steps for Reproducing the Main Analyses
 1. Install the required Python environment
 2. Download and unzip the saved data and model fitting results
